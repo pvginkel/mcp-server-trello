@@ -109,6 +109,64 @@ You can get these values from:
   - Board ID (optional, deprecated): Found in the board URL (e.g., `https://trello.com/b/abc123/example-board`)
   - Workspace ID: Found in workspace settings or using `list_workspaces` tool
 
+### Running over HTTP
+
+By default the server communicates over **stdio**, which is what most MCP
+clients launch directly. It can also run over the modern **Streamable HTTP**
+transport so a single long-running instance can serve MCP clients over the
+network. stdio remains the default — HTTP is fully opt-in and controlled by
+environment variables:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `TRELLO_MCP_TRANSPORT` | `stdio` | Set to `http` to serve over Streamable HTTP. |
+| `TRELLO_MCP_HTTP_HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` inside a container. |
+| `TRELLO_MCP_HTTP_PORT` | `3000` | Bind port. |
+| `TRELLO_MCP_HTTP_TOKEN` | *(unset)* | If set, every request must send `Authorization: Bearer <token>`. |
+| `TRELLO_MCP_HTTP_ALLOWED_HOSTS` | derived from `host:port` | Comma-separated `Host` header allow-list for DNS-rebinding protection. |
+
+Start it over HTTP:
+
+```bash
+TRELLO_MCP_TRANSPORT=http \
+TRELLO_API_KEY=your-api-key \
+TRELLO_TOKEN=your-token \
+bun build/index.js
+# → Trello MCP server listening on http://127.0.0.1:3000/mcp (Streamable HTTP)
+```
+
+Point an MCP client at the `/mcp` endpoint:
+
+```json
+{
+  "mcpServers": {
+    "trello": {
+      "url": "http://127.0.0.1:3000/mcp"
+    }
+  }
+}
+```
+
+If a bearer token is configured, include it in the client's request headers:
+
+```json
+{
+  "mcpServers": {
+    "trello": {
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": { "Authorization": "Bearer your-token" }
+    }
+  }
+}
+```
+
+> **Security:** the default bind is loopback (`127.0.0.1`) with no auth, which is
+> safe for local use. Before exposing the server beyond localhost, **set
+> `TRELLO_MCP_HTTP_TOKEN`** and set `TRELLO_MCP_HTTP_ALLOWED_HOSTS` to the public
+> `host:port` clients will use. DNS-rebinding protection is always on and rejects
+> requests whose `Host` header is not in the allow-list. Legacy SSE transport is
+> not supported.
+
 ### Board and Workspace Management
 
 Starting with version 0.3.0, the MCP server supports multiple ways to work with boards:

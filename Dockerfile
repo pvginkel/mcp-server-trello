@@ -38,5 +38,9 @@ RUN bun install --production --frozen
 # They can be provided via docker run -e or docker compose environment section
 ENV NODE_ENV=production
 
+# Default transport is stdio (backward compatible). To serve over Streamable
+# HTTP, set TRELLO_MCP_TRANSPORT=http and TRELLO_MCP_HTTP_HOST=0.0.0.0 at runtime
+# and publish the port (default 3000); set TRELLO_MCP_HTTP_TOKEN before exposing.
+
 # Run the MCP server using Bun
 CMD ["bun", "build/index.js"]
