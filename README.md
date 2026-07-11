@@ -358,6 +358,25 @@ Get comprehensive details of a specific Trello card with human-level parity.
   - 🎨 Cover images
   - 📍 Board and list context
 
+### get\_card\_by\_short 🆕
+
+Get comprehensive details of a Trello card by its board-local numeric card number (`idShort` — the
+number shown in the UI, e.g. `#42`). Unlike `get_card`, which needs a full card ID or 8-character
+shortLink, this resolves the short number that is only unique within a board.
+
+```typescript
+{
+  name: 'get_card_by_short',
+  arguments: {
+    boardId?: string,         // Optional: ID of the board (uses default if not provided)
+    cardShort: number,        // The card's numeric short ID (e.g. 42)
+    includeMarkdown?: boolean // Return formatted markdown instead of JSON (default: false)
+  }
+}
+```
+
+**Returns:** The same complete card data as `get_card`.
+
 ### get\_cards\_by\_list\_id
 
 Fetch all cards from a specific list.

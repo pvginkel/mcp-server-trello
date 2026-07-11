@@ -956,6 +956,47 @@ class TrelloServer {
       }
     );
 
+    // Get card details by board-local numeric short ID (idShort)
+    this.server.registerTool(
+      'get_card_by_short',
+      {
+        title: 'Get Card by Short ID',
+        description:
+          'Get detailed information about a Trello card by its board-local numeric card number (idShort, e.g. 42). Requires a board (falls back to the default board if configured).',
+        inputSchema: {
+          boardId: z
+            .string()
+            .optional()
+            .describe('ID of the Trello board (uses default if not provided)'),
+          cardShort: z
+            .number()
+            .int()
+            .positive()
+            .describe("The card's numeric short ID (the number shown in the UI, e.g. 42)"),
+          includeMarkdown: z
+            .boolean()
+            .optional()
+            .default(false)
+            .describe('Whether to return card description in markdown format (default: false)'),
+        },
+      },
+      async ({ boardId, cardShort, includeMarkdown }) => {
+        try {
+          const card = await this.trelloClient.getCardByShort(boardId, cardShort, includeMarkdown);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: typeof card === 'string' ? card : JSON.stringify(card, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return this.handleError(error);
+        }
+      }
+    );
+
     // Add a comment to a card
     this.server.registerTool(
       'add_comment',

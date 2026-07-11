@@ -596,29 +596,63 @@ export class TrelloClient {
     );
   }
 
+  // Shared enhanced-fields param bag used to fetch full card details. Keeping this
+  // in one place ensures getCard and getCardByShort stay in lockstep.
+  private cardDetailParams() {
+    return {
+      attachments: true,
+      checklists: 'all',
+      checkItemStates: true,
+      members: true,
+      membersVoted: true,
+      labels: true,
+      actions: 'commentCard',
+      actions_limit: 100,
+      fields: 'all',
+      customFieldItems: true,
+      list: true,
+      board: true,
+      stickers: true,
+      pluginData: true,
+    };
+  }
+
   async getCard(
     cardId: string,
     includeMarkdown: boolean = false
   ): Promise<EnhancedTrelloCard | string> {
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.get(`/cards/${cardId}`, {
-        params: {
-          attachments: true,
-          checklists: 'all',
-          checkItemStates: true,
-          members: true,
-          membersVoted: true,
-          labels: true,
-          actions: 'commentCard',
-          actions_limit: 100,
-          fields: 'all',
-          customFieldItems: true,
-          list: true,
-          board: true,
-          stickers: true,
-          pluginData: true,
-        },
+        params: this.cardDetailParams(),
       });
+
+      const cardData: EnhancedTrelloCard = response.data;
+
+      if (includeMarkdown) {
+        return this.formatCardAsMarkdown(cardData);
+      }
+
+      return cardData;
+    });
+  }
+
+  async getCardByShort(
+    boardId: string | undefined,
+    cardShort: number,
+    includeMarkdown: boolean = false
+  ): Promise<EnhancedTrelloCard | string> {
+    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    if (!effectiveBoardId) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'boardId is required when no default board is configured'
+      );
+    }
+    return this.handleRequest(async () => {
+      const response = await this.axiosInstance.get(
+        `/boards/${effectiveBoardId}/cards/${cardShort}`,
+        { params: this.cardDetailParams() }
+      );
 
       const cardData: EnhancedTrelloCard = response.data;
 
