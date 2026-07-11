@@ -9,7 +9,7 @@ const MOCK_CARDS = [
     desc: '',
     due: null,
     idList: 'list1',
-    idLabels: [],
+    idLabels: ['labelA'],
     closed: false,
     url: '',
     dateLastActivity: '',
@@ -20,7 +20,7 @@ const MOCK_CARDS = [
     desc: '',
     due: null,
     idList: 'list1',
-    idLabels: [],
+    idLabels: ['labelA', 'labelB'],
     closed: false,
     url: '',
     dateLastActivity: '',
@@ -31,7 +31,7 @@ const MOCK_CARDS = [
     desc: '',
     due: null,
     idList: 'list1',
-    idLabels: [],
+    idLabels: ['labelB'],
     closed: false,
     url: '',
     dateLastActivity: '',
@@ -61,6 +61,7 @@ function createMockedClient() {
 
 // Mirror the schema from index.ts for validation tests
 const nameFilterSchema = z.string().trim().min(1, 'nameFilter must not be empty').optional();
+const labelIdSchema = z.string().trim().min(1, 'labelId must not be empty').optional();
 
 describe('nameFilter schema validation', () => {
   it('accepts undefined', () => {
@@ -137,6 +138,78 @@ describe('getCardsByList nameFilter', () => {
   it('passes requested fields while filtering by name', async () => {
     const cards = await client.getCardsByList('list1', 'name,idList', 'FEAT');
     expect(cards).toHaveLength(2);
+    expect((client as any).axiosInstance.get).toHaveBeenCalledWith('/lists/list1/cards', {
+      params: { fields: 'name,idList' },
+    });
+  });
+});
+
+describe('labelId schema validation', () => {
+  it('accepts undefined', () => {
+    expect(labelIdSchema.parse(undefined)).toBeUndefined();
+  });
+
+  it('rejects empty string', () => {
+    expect(() => labelIdSchema.parse('')).toThrow();
+  });
+
+  it('rejects whitespace-only string', () => {
+    expect(() => labelIdSchema.parse('   ')).toThrow();
+  });
+
+  it('accepts valid string', () => {
+    expect(labelIdSchema.parse('labelA')).toBe('labelA');
+  });
+
+  it('trims whitespace from valid string', () => {
+    expect(labelIdSchema.parse('  labelA  ')).toBe('labelA');
+  });
+});
+
+describe('getCardsByList labelId', () => {
+  let client: TrelloClient;
+
+  beforeEach(() => {
+    client = createMockedClient();
+  });
+
+  it('returns all cards when no labelId is provided', async () => {
+    const cards = await client.getCardsByList('list1', undefined, undefined, undefined);
+    expect(cards).toHaveLength(4);
+  });
+
+  it('filters to only cards carrying the given label ID', async () => {
+    const cards = await client.getCardsByList('list1', undefined, undefined, 'labelA');
+    expect(cards.map((c) => c.id)).toEqual(['1', '2']);
+  });
+
+  it('matches cards that carry the label among several', async () => {
+    const cards = await client.getCardsByList('list1', undefined, undefined, 'labelB');
+    expect(cards.map((c) => c.id)).toEqual(['2', '3']);
+  });
+
+  it('returns empty array when no card carries the label', async () => {
+    const cards = await client.getCardsByList('list1', undefined, undefined, 'labelZ');
+    expect(cards).toHaveLength(0);
+  });
+
+  it('composes nameFilter and labelId (intersection)', async () => {
+    const cards = await client.getCardsByList('list1', undefined, 'FEAT', 'labelB');
+    expect(cards.map((c) => c.id)).toEqual(['2']);
+  });
+
+  it('force-includes idLabels when fields is restricted and labelId is set', async () => {
+    await client.getCardsByList('list1', 'name,idList', undefined, 'labelA');
+    const call = (client as any).axiosInstance.get.mock.calls[0];
+    expect(call[0]).toBe('/lists/list1/cards');
+    const requestedFields = call[1].params.fields.split(',');
+    expect(requestedFields).toContain('idLabels');
+    expect(requestedFields).toContain('name');
+    expect(requestedFields).toContain('idList');
+  });
+
+  it('does not add idLabels to fields when no labelId is set', async () => {
+    await client.getCardsByList('list1', 'name,idList', undefined, undefined);
     expect((client as any).axiosInstance.get).toHaveBeenCalledWith('/lists/list1/cards', {
       params: { fields: 'name,idList' },
     });

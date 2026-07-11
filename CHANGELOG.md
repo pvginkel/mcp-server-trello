@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Label filter on `get_cards_by_list_id`**: New optional `labelId` argument returns only cards carrying the given Trello label ID. Applied client-side and composes with `nameFilter`.
 - **List Position Management**: `update_list_position(listId, position)` - Reorder lists on a board using Trello's fractional indexing ("top", "bottom", or a numeric position)
 - **List Management**: `update_list(listId, name?, closed?, subscribed?, idBoard?)` - Update a list's name, closed state, subscription, or move it to a different board
 
