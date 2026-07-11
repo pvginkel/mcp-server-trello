@@ -1,40 +1,60 @@
 #!/usr/bin/env node
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { TrelloClient } from './trello-client.js';
 import { TrelloHealthEndpoints, HealthEndpointSchemas } from './health/health-endpoints.js';
 import { formatCardListResponse } from './card-list-preview.js';
+import { readHttpConfig, startHttpServer } from './http-server.js';
 
+/**
+ * Build the shared {@link TrelloClient} from environment variables. The client
+ * holds the mutable board/workspace selection and is shared across every MCP
+ * session (stdio has one session; HTTP shares one client across sessions).
+ */
+export function createTrelloClient(): TrelloClient {
+  const apiKey = process.env.TRELLO_API_KEY;
+  const token = process.env.TRELLO_TOKEN;
+  const defaultBoardId = process.env.TRELLO_BOARD_ID;
+  const allowedWorkspacesEnv = process.env.TRELLO_ALLOWED_WORKSPACES;
+
+  if (!apiKey || !token) {
+    throw new Error('TRELLO_API_KEY and TRELLO_TOKEN environment variables are required');
+  }
+
+  // Parse allowed workspaces from comma-separated string
+  const allowedWorkspaceIds = allowedWorkspacesEnv
+    ? allowedWorkspacesEnv
+        .split(',')
+        .map(id => id.trim())
+        .filter(id => id.length > 0)
+    : undefined;
+
+  return new TrelloClient({
+    apiKey,
+    token,
+    defaultBoardId,
+    boardId: defaultBoardId,
+    allowedWorkspaceIds,
+  });
+}
+
+/**
+ * One MCP server instance and its tool registrations. In stdio mode there is
+ * exactly one; in HTTP mode a fresh instance is created per session (see
+ * {@link createMcpServer}), all wired to the same shared {@link TrelloClient}
+ * so board/workspace selection persists across requests.
+ */
 class TrelloServer {
   private server: McpServer;
   private trelloClient: TrelloClient;
   private healthEndpoints: TrelloHealthEndpoints;
 
-  constructor() {
-    const apiKey = process.env.TRELLO_API_KEY;
-    const token = process.env.TRELLO_TOKEN;
-    const defaultBoardId = process.env.TRELLO_BOARD_ID;
-    const allowedWorkspacesEnv = process.env.TRELLO_ALLOWED_WORKSPACES;
-
-    if (!apiKey || !token) {
-      throw new Error('TRELLO_API_KEY and TRELLO_TOKEN environment variables are required');
-    }
-
-    // Parse allowed workspaces from comma-separated string
-    const allowedWorkspaceIds = allowedWorkspacesEnv
-      ? allowedWorkspacesEnv.split(',').map(id => id.trim()).filter(id => id.length > 0)
-      : undefined;
-
-    this.trelloClient = new TrelloClient({
-      apiKey,
-      token,
-      defaultBoardId,
-      boardId: defaultBoardId,
-      allowedWorkspaceIds,
-    });
-
-    this.healthEndpoints = new TrelloHealthEndpoints(this.trelloClient);
+  constructor(trelloClient: TrelloClient, healthEndpoints: TrelloHealthEndpoints) {
+    this.trelloClient = trelloClient;
+    this.healthEndpoints = healthEndpoints;
 
     this.server = new McpServer({
       name: 'trello-server',
@@ -43,12 +63,11 @@ class TrelloServer {
 
     this.setupTools();
     this.setupHealthEndpoints();
+  }
 
-    // Error handling
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
+  /** The underlying MCP server, ready to connect to a transport. */
+  getServer(): McpServer {
+    return this.server;
   }
 
   private handleError(error: unknown) {
@@ -1899,18 +1918,67 @@ class TrelloServer {
       }
     });
   }
+}
 
-  async run() {
-    const transport = new StdioServerTransport();
-    // Load configuration before starting the server
-    await this.trelloClient.loadConfig().catch(() => {
-      // Continue with default config if loading fails
+/**
+ * Build a fresh MCP server bound to the shared client + health endpoints.
+ * HTTP mode calls this once per session; stdio mode calls it once. Declared as
+ * a function so it is hoisted for the (safe, call-time-only) import cycle with
+ * {@link ./http-server}.
+ */
+export function createMcpServer(client: TrelloClient, health: TrelloHealthEndpoints): McpServer {
+  return new TrelloServer(client, health).getServer();
+}
+
+async function main(): Promise<void> {
+  const client = createTrelloClient();
+  const health = new TrelloHealthEndpoints(client);
+
+  // Load configuration once, before serving (best effort; fall back to defaults).
+  await client.loadConfig().catch(() => {
+    // Continue with default config if loading fails
+  });
+
+  const httpConfig = readHttpConfig();
+
+  if (httpConfig.transport === 'http') {
+    const { close } = await startHttpServer(client, health, httpConfig);
+    process.on('SIGINT', async () => {
+      await close().catch(() => {});
+      process.exit(0);
     });
-    await this.server.connect(transport);
+    return;
+  }
+
+  // Default: stdio transport — single session, backward compatible.
+  const server = createMcpServer(client, health);
+  const transport = new StdioServerTransport();
+  process.on('SIGINT', async () => {
+    await server.close();
+    process.exit(0);
+  });
+  await server.connect(transport);
+}
+
+/**
+ * True only when this module is the process entry point (not when imported by
+ * a test or by the HTTP server module). Guards the bootstrap so importing the
+ * factory has no side effects.
+ */
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return path.resolve(entry) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
   }
 }
 
-const server = new TrelloServer();
-server.run().catch(() => {
-  // Silently handle errors to avoid interfering with MCP protocol
-});
+if (isEntryPoint()) {
+  main().catch(error => {
+    // stderr only — never stdout, which carries the stdio JSON-RPC stream.
+    console.error('Fatal error starting Trello MCP server:', error);
+    process.exit(1);
+  });
+}
