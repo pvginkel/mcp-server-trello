@@ -89,7 +89,7 @@ class TrelloServer {
       {
         title: 'Get Cards by List ID',
         description:
-          'Fetch cards from a specific Trello list on a specific board. Descriptions are previewed by default to keep responses compact; set fields without "desc" to omit descriptions, or increase descMaxLength/omitDescThresholdBytes and use get_card for full details.',
+          'Fetch cards from a specific Trello list on a specific board. Optionally filter by name substring (nameFilter) and/or label ID (labelId); both are applied client-side and compose. Descriptions are previewed by default to keep responses compact; set fields without "desc" to omit descriptions, or increase descMaxLength/omitDescThresholdBytes and use get_card for full details.',
         inputSchema: {
           boardId: z
             .string()
@@ -106,6 +106,12 @@ class TrelloServer {
             .min(1, 'nameFilter must not be empty')
             .optional()
             .describe('Optional substring to filter cards by name (case-insensitive)'),
+          labelId: z
+            .string()
+            .trim()
+            .min(1, 'labelId must not be empty')
+            .optional()
+            .describe('Optional Trello label ID; only cards carrying this label are returned'),
           descMaxLength: z
             .number()
             .int()
@@ -124,9 +130,9 @@ class TrelloServer {
             ),
         },
       },
-      async ({ listId, fields, nameFilter, descMaxLength, omitDescThresholdBytes }) => {
+      async ({ listId, fields, nameFilter, labelId, descMaxLength, omitDescThresholdBytes }) => {
         try {
-          const cards = await this.trelloClient.getCardsByList(listId, fields, nameFilter);
+          const cards = await this.trelloClient.getCardsByList(listId, fields, nameFilter, labelId);
           return formatCardListResponse(cards, { descMaxLength, omitDescThresholdBytes });
         } catch (error) {
           return this.handleError(error);

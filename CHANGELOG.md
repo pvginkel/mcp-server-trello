@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Card Lookup by Short ID**: `get_card_by_short(boardId?, cardShort, includeMarkdown?)` - Fetch full card details by a board's human-facing numeric card number (`idShort`, e.g. `#42`); falls back to the default board when `boardId` is omitted
 - **Streamable HTTP transport**: The server can now run over the modern MCP Streamable HTTP transport in addition to stdio (which remains the default and unchanged). Opt in with `TRELLO_MCP_TRANSPORT=http`; configure the bind address/port with `TRELLO_MCP_HTTP_HOST` / `TRELLO_MCP_HTTP_PORT`, an optional bearer token with `TRELLO_MCP_HTTP_TOKEN`, and the DNS-rebinding `Host` allow-list with `TRELLO_MCP_HTTP_ALLOWED_HOSTS`. Uses per-session MCP servers over a single shared Trello client so board/workspace selection persists across requests. Legacy SSE transport is intentionally not supported.
+- **Label filter on `get_cards_by_list_id`**: New optional `labelId` argument returns only cards carrying the given Trello label ID. Applied client-side and composes with `nameFilter`.
 - **List Position Management**: `update_list_position(listId, position)` - Reorder lists on a board using Trello's fractional indexing ("top", "bottom", or a numeric position)
 - **List Management**: `update_list(listId, name?, closed?, subscribed?, idBoard?)` - Update a list's name, closed state, subscription, or move it to a different board
 

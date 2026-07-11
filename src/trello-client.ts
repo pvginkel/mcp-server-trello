@@ -343,16 +343,34 @@ export class TrelloClient {
   async getCardsByList(
     listId: string,
     fields?: string,
-    nameFilter?: string
+    nameFilter?: string,
+    labelId?: string
   ): Promise<TrelloCard[]> {
     return this.handleRequest(async () => {
-      const params = fields ? { fields } : {};
+      // If the caller restricts `fields` but we need to filter by label,
+      // force-include idLabels so the filter has data to work with.
+      let effectiveFields = fields;
+      if (labelId?.trim() && fields) {
+        const set = new Set(
+          fields
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean)
+        );
+        set.add('idLabels');
+        effectiveFields = [...set].join(',');
+      }
+      const params = effectiveFields ? { fields: effectiveFields } : {};
       const response = await this.axiosInstance.get(`/lists/${listId}/cards`, { params });
       let cards: TrelloCard[] = response.data;
       const trimmed = nameFilter?.trim();
       if (trimmed) {
         const searchTerm = trimmed.toLowerCase();
         cards = cards.filter((card) => card.name.toLowerCase().includes(searchTerm));
+      }
+      const trimmedLabel = labelId?.trim();
+      if (trimmedLabel) {
+        cards = cards.filter((card) => card.idLabels?.includes(trimmedLabel));
       }
       return cards;
     });

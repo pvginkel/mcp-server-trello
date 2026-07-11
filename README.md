@@ -437,17 +437,22 @@ shortLink, this resolves the short number that is only unique within a board.
 
 ### get\_cards\_by\_list\_id
 
-Fetch all cards from a specific list.
+Fetch cards from a specific list, optionally filtered by name substring and/or label ID.
 
 ```typescript
 {
-  name: 'get_cards_by_list_id',
-  arguments: {
-    boardId?: string, // Optional: ID of the board (uses default if not provided)
-    listId: string    // ID of the Trello list
-  }
+  name: 'get_cards_by_list_id',
+  arguments: {
+    boardId?: string,    // Optional: ID of the board (uses default if not provided)
+    listId: string,      // ID of the Trello list
+    fields?: string,     // Optional: comma-separated fields to return (e.g. "name,idShort,labels")
+    nameFilter?: string, // Optional: case-insensitive substring to filter cards by name
+    labelId?: string     // Optional: Trello label ID; only cards carrying this label are returned
+  }
 }
 ```
+
+`nameFilter` and `labelId` are applied client-side and compose (a card must match both when both are given).
 
 ### get\_lists
 
