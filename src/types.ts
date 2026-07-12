@@ -252,6 +252,9 @@ export interface EnhancedTrelloCard {
   members: TrelloMember[];
   idMembers: string[];
   comments: TrelloComment[];
+  // Trello returns comment actions under `actions` when fetched with
+  // actions=commentCard; formatCardAsMarkdown falls back to this.
+  actions?: TrelloComment[];
   customFieldItems?: TrelloCustomFieldItem[];
   badges: TrelloBadges;
   cover: TrelloCover;
