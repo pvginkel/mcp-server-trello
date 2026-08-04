@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Card Lookup by Short ID**: `get_card_by_short(boardId?, cardShort, includeMarkdown?)` - Fetch full card details by a board's human-facing numeric card number (`idShort`, e.g. `#42`); falls back to the default board when `boardId` is omitted
+- **Card Lookup by Short ID**: `get_card_by_short(boardId?, cardShort, includeMarkdown?)` - Fetch full card details by a board's human-facing numeric card number (`idShort`, e.g. `#42`); falls back to the default board when `boardId` is omitted. `cardShort` also accepts an array (e.g. `[42, 43, 51]`) to fetch several cards in one call, returning each under a greppable `# Card #<n>: <name>` heading; a short ID that cannot be fetched reports its error in place instead of failing the whole batch
 - **List Position Management**: `update_list_position(listId, position)` - Reorder lists on a board using Trello's fractional indexing ("top", "bottom", or a numeric position)
 - **List Management**: `update_list(listId, name?, closed?, subscribed?, idBoard?)` - Update a list's name, closed state, subscription, or move it to a different board
 

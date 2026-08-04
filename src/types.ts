@@ -273,6 +273,18 @@ export interface RateLimiter {
   waitForAvailableToken(): Promise<void>;
 }
 
+// One entry per requested short ID when fetching several cards at once. Lookups are
+// independent, so a missing or archived card yields `error` for that entry only and
+// leaves the rest of the batch intact. `name` is carried separately so callers can
+// build a section heading without having to reach into `card`, which is already
+// rendered markdown when includeMarkdown is set.
+export interface CardByShortResult {
+  cardShort: number;
+  name?: string;
+  card?: EnhancedTrelloCard | string;
+  error?: string;
+}
+
 // Enhanced checklist types for MCP tools
 export interface CheckList {
   id: string;

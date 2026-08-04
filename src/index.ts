@@ -962,17 +962,17 @@ class TrelloServer {
       {
         title: 'Get Card by Short ID',
         description:
-          'Get detailed information about a Trello card by its board-local numeric card number (idShort, e.g. 42). Requires a board (falls back to the default board if configured).',
+          'Get detailed information about one or more Trello cards by their board-local numeric card number (idShort, e.g. 42). Requires a board (falls back to the default board if configured). Pass an array of short IDs to fetch several cards in a single call; the response is then split into sections, each introduced by a "# Card #<n>: <name>" heading line, and short IDs that could not be fetched get a section describing the error instead of failing the whole call.',
         inputSchema: {
           boardId: z
             .string()
             .optional()
             .describe('ID of the Trello board (uses default if not provided)'),
           cardShort: z
-            .number()
-            .int()
-            .positive()
-            .describe("The card's numeric short ID (the number shown in the UI, e.g. 42)"),
+            .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
+            .describe(
+              "The card's numeric short ID (the number shown in the UI, e.g. 42), or an array of short IDs (e.g. [42, 43, 51]) to fetch several cards at once"
+            ),
           includeMarkdown: z
             .boolean()
             .optional()
@@ -982,14 +982,51 @@ class TrelloServer {
       },
       async ({ boardId, cardShort, includeMarkdown }) => {
         try {
-          const card = await this.trelloClient.getCardByShort(boardId, cardShort, includeMarkdown);
+          if (!Array.isArray(cardShort)) {
+            const card = await this.trelloClient.getCardByShort(
+              boardId,
+              cardShort,
+              includeMarkdown
+            );
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: typeof card === 'string' ? card : JSON.stringify(card, null, 2),
+                },
+              ],
+            };
+          }
+
+          // Asking for the same card twice would just duplicate a large payload.
+          const cardShorts = [...new Set(cardShort)];
+          const results = await this.trelloClient.getCardsByShort(
+            boardId,
+            cardShorts,
+            includeMarkdown
+          );
+
+          // Sections are delimited by an H1 that no card body can produce on its own: the
+          // markdown renderer emits its single H1 as this heading, and pretty-printed JSON
+          // never starts a line with "# ". That makes "^# Card #<n>" a reliable anchor for
+          // grepping a card back out of a response large enough to be spilled to disk.
+          const text = results
+            .map(result => {
+              const heading = `# Card #${result.cardShort}${result.name ? `: ${result.name}` : ''}`;
+              if (result.error) {
+                return `${heading}\n\nError: ${result.error}`;
+              }
+              if (includeMarkdown) {
+                return result.card as string;
+              }
+              return `${heading}\n\n\`\`\`json\n${JSON.stringify(result.card, null, 2)}\n\`\`\``;
+            })
+            .join('\n\n');
+
           return {
-            content: [
-              {
-                type: 'text' as const,
-                text: typeof card === 'string' ? card : JSON.stringify(card, null, 2),
-              },
-            ],
+            content: [{ type: 'text' as const, text }],
+            // Only a wholly failed batch is an error; a partial one still carries usable cards.
+            ...(results.every(result => result.error) ? { isError: true } : {}),
           };
         } catch (error) {
           return this.handleError(error);
