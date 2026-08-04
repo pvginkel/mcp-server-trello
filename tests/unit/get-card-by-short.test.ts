@@ -134,3 +134,71 @@ describe('getCardByShort', () => {
     expect(result).toContain('# My Card');
   });
 });
+
+describe('getCardsByShort', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should fetch every requested short ID and keep them in request order', async () => {
+    mockAxiosInstance.get.mockImplementation(async (url: string) => {
+      const cardShort = Number(url.split('/').pop());
+      return { data: { id: `c${cardShort}`, idShort: cardShort, name: `Card ${cardShort}` } };
+    });
+
+    const client = createClient();
+    const results = await client.getCardsByShort('board-1', [42, 7, 13]);
+
+    expect(results.map(r => r.cardShort)).toEqual([42, 7, 13]);
+    expect(results.map(r => r.name)).toEqual(['Card 42', 'Card 7', 'Card 13']);
+    expect(results.every(r => r.error === undefined)).toBe(true);
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith(
+      '/boards/board-1/cards/7',
+      expect.objectContaining({ params: expect.objectContaining({ fields: 'all' }) })
+    );
+  });
+
+  it('should report per-card errors without failing the whole batch', async () => {
+    mockAxiosInstance.get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/99')) {
+        throw new Error('boom');
+      }
+      return { data: { id: 'c42', idShort: 42, name: 'Card 42' } };
+    });
+
+    const client = createClient();
+    const results = await client.getCardsByShort('board-1', [42, 99]);
+
+    expect(results[0].card).toEqual({ id: 'c42', idShort: 42, name: 'Card 42' });
+    expect(results[0].error).toBeUndefined();
+    expect(results[1].card).toBeUndefined();
+    expect(results[1].error).toBeTruthy();
+  });
+
+  it('should render each card under a "Card #<n>" heading when includeMarkdown is true', async () => {
+    mockAxiosInstance.get.mockImplementation(async (url: string) => {
+      const cardShort = Number(url.split('/').pop());
+      return {
+        data: { id: `c${cardShort}`, idShort: cardShort, name: `Card ${cardShort}`, labels: [] },
+      };
+    });
+
+    const client = createClient();
+    const results = await client.getCardsByShort('board-1', [42, 7], true);
+
+    expect(results[0].card).toContain('# Card #42: Card 42');
+    expect(results[1].card).toContain('# Card #7: Card 7');
+    // The heading replaces the card's own H1 rather than stacking on top of it, so it
+    // stays usable as a section delimiter.
+    expect((results[0].card as string).match(/^# /gm)).toHaveLength(1);
+  });
+
+  it('should throw InvalidParams when no board is available anywhere', async () => {
+    const client = createClient();
+
+    await expect(client.getCardsByShort(undefined, [7])).rejects.toThrow(
+      'boardId is required when no default board is configured'
+    );
+    expect(mockAxiosInstance.get).not.toHaveBeenCalled();
+  });
+});

@@ -20,6 +20,7 @@ import {
   TrelloCustomFieldDefinition,
   TrelloCustomFieldOption,
   TrelloCustomFieldItem,
+  CardByShortResult,
 } from './types.js';
 import { createTrelloRateLimiters } from './rate-limiter.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
@@ -654,11 +655,9 @@ export class TrelloClient {
     });
   }
 
-  async getCardByShort(
-    boardId: string | undefined,
-    cardShort: number,
-    includeMarkdown: boolean = false
-  ): Promise<EnhancedTrelloCard | string> {
+  // Short IDs are only unique within a board, so every short-ID lookup needs a board to
+  // resolve against.
+  private resolveShortLookupBoardId(boardId: string | undefined): string {
     const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
     if (!effectiveBoardId) {
       throw new McpError(
@@ -666,20 +665,62 @@ export class TrelloClient {
         'boardId is required when no default board is configured'
       );
     }
+    return effectiveBoardId;
+  }
+
+  private fetchCardByShort(
+    effectiveBoardId: string,
+    cardShort: number
+  ): Promise<EnhancedTrelloCard> {
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.get(
         `/boards/${effectiveBoardId}/cards/${cardShort}`,
         { params: this.cardDetailParams() }
       );
-
-      const cardData: EnhancedTrelloCard = response.data;
-
-      if (includeMarkdown) {
-        return this.formatCardAsMarkdown(cardData);
-      }
-
-      return cardData;
+      return response.data as EnhancedTrelloCard;
     });
+  }
+
+  async getCardByShort(
+    boardId: string | undefined,
+    cardShort: number,
+    includeMarkdown: boolean = false
+  ): Promise<EnhancedTrelloCard | string> {
+    const card = await this.fetchCardByShort(this.resolveShortLookupBoardId(boardId), cardShort);
+    return includeMarkdown ? this.formatCardAsMarkdown(card) : card;
+  }
+
+  // Batch sibling of getCardByShort. Each lookup is a separate Trello request, so one bad
+  // short ID (archived, deleted, wrong board) must not sink the rest of the batch — those
+  // entries come back carrying `error` instead of `card`.
+  async getCardsByShort(
+    boardId: string | undefined,
+    cardShorts: number[],
+    includeMarkdown: boolean = false
+  ): Promise<CardByShortResult[]> {
+    const effectiveBoardId = this.resolveShortLookupBoardId(boardId);
+
+    return Promise.all(
+      cardShorts.map(async cardShort => {
+        try {
+          const card = await this.fetchCardByShort(effectiveBoardId, cardShort);
+          return {
+            cardShort,
+            name: card.name,
+            // The heading override keeps each rendered card to a single H1 that doubles
+            // as the batch section marker, instead of stacking one on top of the card's own.
+            card: includeMarkdown
+              ? this.formatCardAsMarkdown(card, `Card #${cardShort}: ${card.name}`)
+              : card,
+          };
+        } catch (error) {
+          return {
+            cardShort,
+            error: error instanceof Error ? error.message : 'Unknown error occurred',
+          };
+        }
+      })
+    );
   }
 
   // Add Comment on Card
@@ -934,11 +975,12 @@ export class TrelloClient {
     });
   }
 
-  private formatCardAsMarkdown(card: EnhancedTrelloCard): string {
+  private formatCardAsMarkdown(card: EnhancedTrelloCard, heading?: string): string {
     let markdown = '';
 
-    // Title and basic info
-    markdown += `# ${card.name}\n\n`;
+    // Title and basic info. This is the only H1 the renderer emits, which is what lets a
+    // batch response use it as the per-card section marker.
+    markdown += `# ${heading ?? card.name}\n\n`;
 
     // Board and List context
     if (card.board && card.list) {

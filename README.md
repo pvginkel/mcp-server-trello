@@ -418,22 +418,49 @@ Get comprehensive details of a specific Trello card with human-level parity.
 
 ### get\_card\_by\_short 🆕
 
-Get comprehensive details of a Trello card by its board-local numeric card number (`idShort` — the
-number shown in the UI, e.g. `#42`). Unlike `get_card`, which needs a full card ID or 8-character
-shortLink, this resolves the short number that is only unique within a board.
+Get comprehensive details of one or more Trello cards by their board-local numeric card number
+(`idShort` — the number shown in the UI, e.g. `#42`). Unlike `get_card`, which needs a full card ID
+or 8-character shortLink, this resolves the short number that is only unique within a board.
 
 ```typescript
 {
   name: 'get_card_by_short',
   arguments: {
-    boardId?: string,         // Optional: ID of the board (uses default if not provided)
-    cardShort: number,        // The card's numeric short ID (e.g. 42)
-    includeMarkdown?: boolean // Return formatted markdown instead of JSON (default: false)
+    boardId?: string,             // Optional: ID of the board (uses default if not provided)
+    cardShort: number | number[], // The card's numeric short ID (e.g. 42), or several (e.g. [42, 43, 51])
+    includeMarkdown?: boolean     // Return formatted markdown instead of JSON (default: false)
   }
 }
 ```
 
 **Returns:** The same complete card data as `get_card`.
+
+Passing an array fetches every card in one call. The response is then split into sections, each
+introduced by a heading line of the form `# Card #<n>: <name>`:
+
+```markdown
+# Card #42: Fix the login redirect
+
+```json
+{ ... full card data ... }
+```
+
+# Card #51: Ship the release notes
+
+```json
+{ ... full card data ... }
+```
+```
+
+Nothing else in a response can start a line with `# Card #`, so that heading is a reliable anchor
+for pulling a single card back out of a large batch — the markdown renderer emits it as the card's
+only `#` heading, and pretty-printed JSON never begins a line with `#`. Lookups are independent, so
+a short ID that cannot be fetched (archived, deleted, or on another board) yields a section
+describing the error rather than failing the whole call.
+
+There is deliberately no limit on how many cards you may request. Each card carries its full detail
+payload — checklists, attachments, custom fields and up to 100 comments — so a large batch produces
+a correspondingly large response.
 
 ### get\_cards\_by\_list\_id
 
