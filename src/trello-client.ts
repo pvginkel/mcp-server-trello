@@ -15,6 +15,7 @@ import {
   CheckList,
   CheckListItem,
   TrelloComment,
+  TrelloCardAction,
   TrelloMember,
   TrelloLabelDetails,
   TrelloCustomFieldDefinition,
@@ -28,6 +29,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as attachments from './trello/attachments.js';
 import * as checklists from './trello/checklists.js';
+import { CARD_ORIGIN_ACTIONS_PARAM, extractReporter } from './card-reporter.js';
 import { validateExternalUrl } from './url-validator.js';
 
 // Path for storing active board/workspace configuration
@@ -361,9 +363,20 @@ export class TrelloClient {
         set.add('idLabels');
         effectiveFields = [...set].join(',');
       }
-      const params = effectiveFields ? { fields: effectiveFields } : {};
+      const params: Record<string, string | number> = effectiveFields
+        ? { fields: effectiveFields }
+        : {};
+      // Ask for each card's origin action so the list can carry a reporter. `actions_limit`
+      // applies per card and a card has exactly one origin action, so 1 is all it takes.
+      params.actions = CARD_ORIGIN_ACTIONS_PARAM;
+      params.actions_limit = 1;
+
       const response = await this.axiosInstance.get(`/lists/${listId}/cards`, { params });
-      let cards: TrelloCard[] = response.data;
+      // The action bundle is scaffolding, not payload: fold it into `reporter` and drop it,
+      // so the list response gains one small field per card instead of a nested array.
+      let cards: TrelloCard[] = (
+        (response.data ?? []) as Array<TrelloCard & { actions?: TrelloCardAction[] }>
+      ).map(({ actions, ...card }) => ({ ...card, reporter: extractReporter(actions) }));
       const trimmed = nameFilter?.trim();
       if (trimmed) {
         const searchTerm = trimmed.toLowerCase();
@@ -615,6 +628,14 @@ export class TrelloClient {
     );
   }
 
+  // Folds the reporter onto a freshly fetched card. Every detail fetch runs through here so
+  // the JSON output and the markdown renderer read the same derived value, rather than each
+  // re-deriving it from the raw action bundle.
+  private withReporter(card: EnhancedTrelloCard): EnhancedTrelloCard {
+    card.reporter = extractReporter(card.actions);
+    return card;
+  }
+
   // Shared enhanced-fields param bag used to fetch full card details. Keeping this
   // in one place ensures getCard and getCardByShort stay in lockstep.
   private cardDetailParams() {
@@ -625,7 +646,11 @@ export class TrelloClient {
       members: true,
       membersVoted: true,
       labels: true,
-      actions: 'commentCard',
+      // Comments and the card's origin action ride in on the same nested resource, so the
+      // reporter costs no extra request. The limit is shared across both kinds: a card with
+      // 100+ comments pushes its (always oldest) origin action out of the window, and the
+      // reporter then reads as unknown rather than wrong.
+      actions: `commentCard,${CARD_ORIGIN_ACTIONS_PARAM}`,
       actions_limit: 100,
       fields: 'all',
       customFieldItems: true,
@@ -645,7 +670,7 @@ export class TrelloClient {
         params: this.cardDetailParams(),
       });
 
-      const cardData: EnhancedTrelloCard = response.data;
+      const cardData = this.withReporter(response.data as EnhancedTrelloCard);
 
       if (includeMarkdown) {
         return this.formatCardAsMarkdown(cardData);
@@ -677,7 +702,7 @@ export class TrelloClient {
         `/boards/${effectiveBoardId}/cards/${cardShort}`,
         { params: this.cardDetailParams() }
       );
-      return response.data as EnhancedTrelloCard;
+      return this.withReporter(response.data as EnhancedTrelloCard);
     });
   }
 
@@ -987,6 +1012,13 @@ export class TrelloClient {
       markdown += `📍 **Board**: [${card.board.name}](${card.board.url}) > **List**: ${card.list.name}\n\n`;
     }
 
+    // Reporter — rendered inline on the header line, high up where the card's provenance
+    // belongs. Trello can leave the origin action out of reach (see cardDetailParams), and
+    // _Unknown_ says that plainly instead of implying the card has no creator.
+    markdown += card.reporter
+      ? `## 🧑 Reporter: ${card.reporter.fullName} (@${card.reporter.username})\n\n`
+      : `## 🧑 Reporter: _Unknown_\n\n`;
+
     // Labels — header always rendered so an empty section reads as "no labels"
     // rather than "not fetched".
     markdown += `## 🏷️ Labels\n\n`;
@@ -1104,8 +1136,12 @@ export class TrelloClient {
       markdown += `## 📎 Attachments\n\n_None_\n\n`;
     }
 
-    // Comments — Trello returns comment actions under `actions`; surface them here.
-    const comments = card.comments ?? card.actions ?? [];
+    // Comments — Trello returns comment actions under `actions`; surface them here. That
+    // bundle now also carries the card's origin action, and carrying text is what makes an
+    // action a comment, so select on that rather than on `type`.
+    const commentSource: Array<TrelloComment | TrelloCardAction> =
+      card.comments ?? card.actions ?? [];
+    const comments = commentSource.filter(action => Boolean(action.data?.text));
     if (comments.length > 0) {
       markdown += `## 💬 Comments (${comments.length})\n\n`;
       comments.forEach(comment => {

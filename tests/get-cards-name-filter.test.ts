@@ -138,9 +138,8 @@ describe('getCardsByList nameFilter', () => {
   it('passes requested fields while filtering by name', async () => {
     const cards = await client.getCardsByList('list1', 'name,idList', 'FEAT');
     expect(cards).toHaveLength(2);
-    expect((client as any).axiosInstance.get).toHaveBeenCalledWith('/lists/list1/cards', {
-      params: { fields: 'name,idList' },
-    });
+    const params = (client as any).axiosInstance.get.mock.calls[0][1].params;
+    expect(params.fields).toBe('name,idList');
   });
 });
 
@@ -210,8 +209,8 @@ describe('getCardsByList labelId', () => {
 
   it('does not add idLabels to fields when no labelId is set', async () => {
     await client.getCardsByList('list1', 'name,idList', undefined, undefined);
-    expect((client as any).axiosInstance.get).toHaveBeenCalledWith('/lists/list1/cards', {
-      params: { fields: 'name,idList' },
-    });
+    const call = (client as any).axiosInstance.get.mock.calls[0];
+    expect(call[0]).toBe('/lists/list1/cards');
+    expect(call[1].params.fields).toBe('name,idList');
   });
 });

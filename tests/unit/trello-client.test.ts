@@ -700,6 +700,7 @@ describe('TrelloClient', () => {
 
       // Headers are lifted out of their conditionals so the model can see the
       // sections are already rendered and skip redundant checklist/comment calls.
+      expect(md).toContain('## 🧑 Reporter: _Unknown_');
       expect(md).toContain('## 🏷️ Labels\n\n_None_');
       expect(md).toContain('## 📅 Due Date: _Unset_');
       expect(md).toContain('## 👥 Members\n\n_None_');
@@ -733,6 +734,105 @@ describe('TrelloClient', () => {
       expect(md).toContain('## 💬 Comments (1)');
       expect(md).toContain('Jane Doe (@jane)');
       expect(md).toContain('First comment');
+    });
+
+    it('renders the reporter and keeps the origin action out of the comments', async () => {
+      const card = {
+        id: 'c1',
+        name: 'Card',
+        url: 'u',
+        shortUrl: 's',
+        dateLastActivity: '2020-01-01',
+        actions: [
+          {
+            id: 'a2',
+            type: 'commentCard',
+            date: '2020-01-03T00:00:00Z',
+            data: { text: 'A comment' },
+            memberCreator: { id: 'm2', fullName: 'Sam Ray', username: 'sam' },
+          },
+          {
+            id: 'a1',
+            type: 'createCard',
+            date: '2020-01-02T00:00:00Z',
+            data: {},
+            memberCreator: { id: 'm1', fullName: 'Jane Doe', username: 'jane' },
+          },
+        ],
+      };
+      mockAxiosInstance.get.mockResolvedValue({ data: card });
+
+      const md = (await createClient().getCard('c1', true)) as string;
+
+      expect(md).toContain('## 🧑 Reporter: Jane Doe (@jane)');
+      // The origin action rides in the same bundle; it must not be counted as a comment.
+      expect(md).toContain('## 💬 Comments (1)');
+      expect(md).toContain('A comment');
+    });
+
+    it('exposes the reporter on the JSON card as well as the markdown', async () => {
+      const card = {
+        id: 'c1',
+        name: 'Card',
+        actions: [
+          {
+            id: 'a1',
+            type: 'createCard',
+            date: '2020-01-02T00:00:00Z',
+            data: {},
+            memberCreator: { id: 'm1', fullName: 'Jane Doe', username: 'jane' },
+          },
+        ],
+      };
+      mockAxiosInstance.get.mockResolvedValue({ data: card });
+
+      const result = (await createClient().getCard('c1')) as Record<string, unknown>;
+
+      expect(result.reporter).toEqual({ id: 'm1', fullName: 'Jane Doe', username: 'jane' });
+    });
+  });
+
+  describe('getCardsByList reporter', () => {
+    it('requests the origin action and folds it into a reporter per card', async () => {
+      mockAxiosInstance.get.mockResolvedValue({
+        data: [
+          {
+            id: 'c1',
+            name: 'Card one',
+            actions: [
+              {
+                id: 'a1',
+                type: 'createCard',
+                date: '2020-01-02T00:00:00Z',
+                data: {},
+                memberCreator: { id: 'm1', fullName: 'Jane Doe', username: 'jane' },
+              },
+            ],
+          },
+          { id: 'c2', name: 'Card two', actions: [] },
+        ],
+      });
+
+      const cards = await createClient().getCardsByList('list1');
+
+      const params = mockAxiosInstance.get.mock.calls[0][1].params;
+      expect(params.actions).toBe('createCard,copyCard,convertToCardFromCheckItem,emailCard');
+      expect(params.actions_limit).toBe(1);
+
+      expect(cards[0].reporter).toEqual({ id: 'm1', fullName: 'Jane Doe', username: 'jane' });
+      expect(cards[1].reporter).toBeNull();
+      // The raw bundle is scaffolding — it must not bloat the list response.
+      expect(cards[0]).not.toHaveProperty('actions');
+      expect(cards[1]).not.toHaveProperty('actions');
+    });
+
+    it('degrades to a null reporter when Trello returns no action bundle', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: [{ id: 'c1', name: 'Card one' }] });
+
+      const cards = await createClient().getCardsByList('list1');
+
+      expect(cards[0].reporter).toBeNull();
+      expect(cards[0].name).toBe('Card one');
     });
   });
 

@@ -27,6 +27,15 @@ export interface TrelloWorkspace {
   website?: string;
 }
 
+// The identity of a member as it is surfaced on a card. Deliberately narrower than
+// TrelloMember: this is what gets embedded in card payloads, so it stays to the three
+// fields a caller needs to recognise and address a person.
+export interface TrelloMemberRef {
+  id: string;
+  fullName: string;
+  username: string;
+}
+
 export interface TrelloCard {
   id: string;
   name: string;
@@ -37,6 +46,10 @@ export interface TrelloCard {
   closed: boolean;
   url: string;
   dateLastActivity: string;
+  // Who created the card. Trello exposes no creator on the card itself, so this is
+  // derived from the card's origin action — see extractReporter. `null` means the
+  // origin action was fetched but yielded nobody; absent means it was never fetched.
+  reporter?: TrelloMemberRef | null;
 }
 
 export interface TrelloList {
@@ -156,6 +169,24 @@ export interface TrelloComment {
   };
 }
 
+// An entry from a card's inline action bundle, which a card fetch pulls in via the
+// `actions` nested resource. The bundle mixes kinds: comment actions carry `data.text`,
+// while the card's origin action carries only the member who triggered it. `type` is what
+// tells them apart.
+export interface TrelloCardAction {
+  id: string;
+  type: string;
+  date: string;
+  data: {
+    text?: string;
+    card?: {
+      id: string;
+      name: string;
+    };
+  };
+  memberCreator: TrelloMemberRef & { avatarUrl?: string };
+}
+
 export interface TrelloCustomFieldDefinition {
   id: string;
   idModel: string;
@@ -253,8 +284,12 @@ export interface EnhancedTrelloCard {
   idMembers: string[];
   comments: TrelloComment[];
   // Trello returns comment actions under `actions` when fetched with
-  // actions=commentCard; formatCardAsMarkdown falls back to this.
-  actions?: TrelloComment[];
+  // actions=commentCard; formatCardAsMarkdown falls back to this. The same bundle also
+  // carries the card's origin action, which is where `reporter` comes from.
+  actions?: TrelloCardAction[];
+  // Who created the card — derived from the origin action in `actions`, not a field
+  // Trello serves on the card. See extractReporter.
+  reporter?: TrelloMemberRef | null;
   customFieldItems?: TrelloCustomFieldItem[];
   badges: TrelloBadges;
   cover: TrelloCover;

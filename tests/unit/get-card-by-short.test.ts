@@ -70,7 +70,9 @@ describe('getCardByShort', () => {
         members: true,
         membersVoted: true,
         labels: true,
-        actions: 'commentCard',
+        // Comments and the origin action share one nested resource, so the reporter
+        // rides along on the same request.
+        actions: 'commentCard,createCard,copyCard,convertToCardFromCheckItem,emailCard',
         actions_limit: 100,
         fields: 'all',
         customFieldItems: true,
@@ -169,7 +171,14 @@ describe('getCardsByShort', () => {
     const client = createClient();
     const results = await client.getCardsByShort('board-1', [42, 99]);
 
-    expect(results[0].card).toEqual({ id: 'c42', idShort: 42, name: 'Card 42' });
+    // reporter is explicitly null, not absent: the origin action was asked for and came
+    // back empty, which is a different statement from never having looked.
+    expect(results[0].card).toEqual({
+      id: 'c42',
+      idShort: 42,
+      name: 'Card 42',
+      reporter: null,
+    });
     expect(results[0].error).toBeUndefined();
     expect(results[1].card).toBeUndefined();
     expect(results[1].error).toBeTruthy();
