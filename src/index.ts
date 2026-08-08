@@ -89,7 +89,7 @@ class TrelloServer {
       {
         title: 'Get Cards by List ID',
         description:
-          'Fetch cards from a specific Trello list on a specific board. Optionally filter by name substring (nameFilter) and/or label ID (labelId); both are applied client-side and compose. Descriptions are previewed by default to keep responses compact; set fields without "desc" to omit descriptions, or increase descMaxLength/omitDescThresholdBytes and use get_card for full details.',
+          'Fetch cards from a specific Trello list on a specific board. Optionally filter by name substring (nameFilter) and/or label ID (labelId); both are applied client-side and compose. Each card carries a "reporter" field naming the member who created it. Descriptions are previewed by default to keep responses compact; set fields without "desc" to omit descriptions, or increase descMaxLength/omitDescThresholdBytes and use get_card for full details.',
         inputSchema: {
           boardId: z
             .string()
@@ -959,7 +959,8 @@ class TrelloServer {
       'get_card',
       {
         title: 'Get Card',
-        description: 'Get detailed information about a specific Trello card',
+        description:
+          'Get detailed information about a specific Trello card, including the reporter (the member who created it).',
         inputSchema: {
           cardId: z.string().describe('ID of the card to fetch'),
           includeMarkdown: z
@@ -987,7 +988,7 @@ class TrelloServer {
       {
         title: 'Get Card by Short ID',
         description:
-          'Get detailed information about one or more Trello cards by their board-local numeric card number (idShort, e.g. 42). Requires a board (falls back to the default board if configured). Pass an array of short IDs to fetch several cards in a single call; the response is then split into sections, each introduced by a "# Card #<n>: <name>" heading line, and short IDs that could not be fetched get a section describing the error instead of failing the whole call.',
+          'Get detailed information about one or more Trello cards by their board-local numeric card number (idShort, e.g. 42), including the reporter (the member who created each card). Requires a board (falls back to the default board if configured). Pass an array of short IDs to fetch several cards in a single call; the response is then split into sections, each introduced by a "# Card #<n>: <name>" heading line, and short IDs that could not be fetched get a section describing the error instead of failing the whole call.',
         inputSchema: {
           boardId: z
             .string()
