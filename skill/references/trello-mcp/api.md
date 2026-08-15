@@ -3,14 +3,37 @@
 This server exposes Trello operations as MCP tools. Use these names exactly
 when selecting tools.
 
+## Board scope
+
+Board-scoped tools take an optional `boardId`. It resolves in this order:
+explicit `boardId` argument, then the active board, then `TRELLO_BOARD_ID`.
+With ambient selection off there is no active board, so it is the argument or
+`TRELLO_BOARD_ID` only. Ambient selection is on for the stdio transport and off
+for the HTTP transport unless `TRELLO_MCP_AMBIENT_SELECTION` overrides it; see
+`configuration.md`.
+
+These tools accept `boardId`: `get_lists`, `get_recent_activity`, `move_card`
+(the board the target `listId` lives on), `add_list_to_board`,
+`get_card_by_short`, `get_checklist_items`, `add_checklist_item`,
+`find_checklist_items_by_description`, `get_acceptance_criteria`,
+`get_checklist_by_name`, `get_board_members`, `get_board_labels`,
+`create_label`, and `get_board_custom_fields`.
+
+No other tool accepts `boardId`. Card, list, and attachment tools are addressed
+by the card or list ID alone, because those IDs are globally unique in Trello.
+
 ## Boards, workspaces, and lists
 
 - `list_boards`: List boards available to the configured Trello account.
-- `set_active_board`: Persist an active board for later operations.
+- `set_active_board`: Persist an active board for later operations. Registered
+  only when ambient selection is on.
 - `list_workspaces`: List workspaces available to the account.
-- `set_active_workspace`: Persist an active workspace.
-- `list_boards_in_workspace`: List boards in a workspace.
-- `get_active_board_info`: Show the active board and workspace state.
+- `set_active_workspace`: Persist an active workspace. Registered only when
+  ambient selection is on.
+- `list_boards_in_workspace`: List boards in a workspace, by explicit
+  `workspaceId`.
+- `get_active_board_info`: Show the active board and workspace state. Registered
+  only when ambient selection is on.
 - `get_lists`: Retrieve lists for a board.
 - `add_list_to_board`: Create a list on a board.
 - `archive_list`: Archive a list.

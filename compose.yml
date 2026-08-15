@@ -13,6 +13,10 @@ services:
       # TRELLO_MCP_HTTP_PORT: 3000
       # TRELLO_MCP_HTTP_TOKEN: ${TRELLO_MCP_HTTP_TOKEN}
       # TRELLO_MCP_HTTP_ALLOWED_HOSTS: localhost:3000
+      # Under HTTP the selection tools are hidden by default, since one shared
+      # Trello client would let one session retarget another's calls. Set `on`
+      # for a single-user deployment where that sharing is the point.
+      # TRELLO_MCP_AMBIENT_SELECTION: 'on'
     # ports:
     #   - '3000:3000'
     restart: 'no'

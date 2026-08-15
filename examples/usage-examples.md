@@ -36,6 +36,14 @@ First, configure your Trello credentials in your MCP client configuration:
 }
 ```
 
+Every board-scoped tool resolves its target board the same way: an explicit `boardId` argument first, then the active board, then `TRELLO_BOARD_ID`.
+
+The active board is *ambient selection*: a board you pick once with `set_active_board`, which every later call inherits. It is **on** by default under the stdio transport (the configuration above) and **off** by default under the HTTP transport (`TRELLO_MCP_TRANSPORT=http`), where one Trello client is shared by every session and one caller's selection would silently retarget another caller's next unqualified call. Override either default with `TRELLO_MCP_AMBIENT_SELECTION=on` or `=off`.
+
+With ambient selection off, `set_active_board`, `set_active_workspace` and `get_active_board_info` are not registered at all (they do not appear in `tools/list`), board resolution is explicit `boardId` then `TRELLO_BOARD_ID`, and nothing is read from or written to `~/.trello-mcp/config.json`. The examples below that select a board assume it is on; each also shows the explicit alternative.
+
+Tools that address a card, list or attachment by ID take no `boardId` at all - those IDs are globally unique in Trello, so the ID alone reaches the right object.
+
 ### Example 2: Finding your workspace and boards
 
 ```javascript
@@ -54,6 +62,7 @@ await use_mcp_tool({
 });
 
 // Set an active workspace for the session
+// (ambient selection only - see Example 1)
 await use_mcp_tool({
   server_name: "trello",
   tool_name: "set_active_workspace",
@@ -63,6 +72,7 @@ await use_mcp_tool({
 });
 
 // List boards in a specific workspace
+// (always available; takes its workspace explicitly)
 await use_mcp_tool({
   server_name: "trello",
   tool_name: "list_boards_in_workspace",
@@ -72,9 +82,23 @@ await use_mcp_tool({
 });
 
 // Set an active board for future operations
+// (ambient selection only - see Example 1)
 await use_mcp_tool({
   server_name: "trello",
   tool_name: "set_active_board",
+  arguments: {
+    boardId: "5d5a4b8f9e4b0d8123456789"
+  }
+});
+```
+
+With ambient selection off, skip both `set_active_*` calls and name the target on each call instead - `boardId` on the board-scoped tools, `idOrganization` on `create_board` (which becomes required when `TRELLO_ALLOWED_WORKSPACES` is set, since there is no active workspace to fall back to):
+
+```javascript
+// Board-scoped tools take the board explicitly
+await use_mcp_tool({
+  server_name: "trello",
+  tool_name: "get_lists",
   arguments: {
     boardId: "5d5a4b8f9e4b0d8123456789"
   }
@@ -114,6 +138,8 @@ await use_mcp_tool({
 
 ### Example 4: Managing active board context
 
+This example needs ambient selection - the default under stdio. Under the HTTP transport neither tool is registered by default.
+
 ```javascript
 // Check current active board
 await use_mcp_tool({
@@ -128,6 +154,20 @@ await use_mcp_tool({
   tool_name: "set_active_board",
   arguments: {
     boardId: "new-board-id-here"
+  }
+});
+```
+
+Without it, there is no context to manage: carry the board on each call instead.
+
+```javascript
+// Same effect, no shared state - the board travels with the request
+await use_mcp_tool({
+  server_name: "trello",
+  tool_name: "get_recent_activity",
+  arguments: {
+    boardId: "new-board-id-here",
+    limit: 20
   }
 });
 ```
@@ -196,7 +236,10 @@ const cardMarkdown = await use_mcp_tool({
 ### Example 8: Managing card lifecycle
 
 ```javascript
-// Move card to "In Progress" list
+// Move card to "In Progress" list.
+// With no boardId, the card lands on the active board (then TRELLO_BOARD_ID) -
+// the same board the listId is expected to live on. Pass boardId to move the
+// card to a different board.
 await use_mcp_tool({
   server_name: "trello",
   tool_name: "move_card",
@@ -206,7 +249,7 @@ await use_mcp_tool({
   }
 });
 
-// Archive completed card
+// Archive completed card (the card ID alone identifies it - no boardId)
 await use_mcp_tool({
   server_name: "trello",
   tool_name: "archive_card",
@@ -803,7 +846,7 @@ async function addAIGeneratedMockup(cardId, designPrompt) {
 ## Best Practices
 
 1. **Always handle errors**: Wrap MCP tool calls in try-catch blocks for production use
-2. **Use boardId parameter**: When working with multiple boards, always specify the boardId
+2. **Use the boardId parameter**: When working with multiple boards, specify `boardId` on every tool that accepts it (`get_lists`, `get_recent_activity`, `move_card`, `add_list_to_board`, `get_card_by_short`, the checklist lookups, and the board member/label/custom-field tools) rather than relying on the active board. It is the only targeting that works in both modes, and the only one that is safe when several sessions share one server
 3. **Batch operations**: Group related operations together to minimize API calls
 4. **Monitor rate limits**: The server handles rate limiting automatically, but be aware of the limits
 5. **Use meaningful names**: Use descriptive names for cards, lists, and attachments

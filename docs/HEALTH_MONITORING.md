@@ -45,6 +45,8 @@ Returns complete `SystemHealthReport` with:
 - Automated repair recommendations
 - Performance metrics analysis
 
+**Ambient selection off**: when `TRELLO_MCP_AMBIENT_SELECTION=off` (the default under the HTTP transport) and no `TRELLO_BOARD_ID` is configured, there is no board for the board-scoped checks to exercise — every board-scoped call carries its own `boardId`. Those checks report `not checked` and count as 🟢 HEALTHY, rather than pinning the whole report at DEGRADED forever.
+
 ### 3. Metadata Consistency Check - `get_health_metadata`
 **Data integrity scanner**
 
@@ -72,6 +74,8 @@ Attempts to automatically fix:
 - Missing active board configuration
 - Workspace inconsistencies
 - Basic connectivity issues
+
+Setting an active board is the only repair it knows how to make, and ambient selection off is precisely what forbids that. In that mode it reports that no repairs are available instead of hunting for something it could not fix anyway.
 
 ## Health Status Levels
 
@@ -232,7 +236,8 @@ All health endpoints include robust error handling:
 ### Common Issues and Solutions
 
 **Status: DEGRADED - "No active board configured"**
-- Solution: Use `set_active_board` tool with a valid board ID
+- Solution (ambient selection on): Use `set_active_board` tool with a valid board ID
+- With ambient selection off: this status does not appear, and `set_active_board` is not registered. Board checks report `not checked` instead; set `TRELLO_BOARD_ID`, or pass `boardId` explicitly on each call, to give them a board to exercise
 - Prevention: Always configure a default board in environment variables
 
 **Status: CRITICAL - "Trello API connectivity failed"**  

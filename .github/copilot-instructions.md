@@ -48,7 +48,7 @@ src/
    - Manages authentication (API key + token)
    - Implements rate limiting (300 req/10s per key, 100 req/10s per token)
    - Provides methods for all Trello operations
-   - Handles board/workspace persistence via `~/.trello-mcp/config.json`
+   - Handles board/workspace persistence via `~/.trello-mcp/config.json` (only when ambient selection is on)
 
 3. **Rate Limiter** (`src/rate-limiter.ts`):
    - Token bucket algorithm implementation
@@ -104,8 +104,9 @@ Required:
 - `TRELLO_TOKEN` - Generate using API key authorization flow
 
 Optional:
-- `TRELLO_BOARD_ID` - Default board (can be changed via `set_active_board` tool)
-- `TRELLO_WORKSPACE_ID` - Initial workspace (can be changed via `set_active_workspace` tool)
+- `TRELLO_BOARD_ID` - Default board (can also be changed at runtime via `set_active_board`, when ambient selection is on)
+- `TRELLO_WORKSPACE_ID` - Initial workspace (can also be changed at runtime via `set_active_workspace`, when ambient selection is on)
+- `TRELLO_MCP_AMBIENT_SELECTION` - `on` or `off`; whether a board/workspace selection is held across calls. Unset follows the transport: on for stdio, off for HTTP (one `TrelloClient` is shared by every HTTP session, so an active board set by one session would retarget another's unqualified calls). With it off, `set_active_board`, `set_active_workspace` and `get_active_board_info` are not registered, and `~/.trello-mcp/config.json` is neither read nor written
 
 ### Adding New Tools
 
@@ -149,7 +150,7 @@ this.server.registerTool(
 - **Rate Limits**: Automatically handled by `RateLimiter` class
 - **Authentication**: API key + token passed via query parameters
 - **Error Handling**: Use `McpError` from the SDK for user-facing errors
-- **Board Management**: Support both explicit `boardId` parameter and default board
+- **Board Management**: Board-scoped tools support both an explicit `boardId` parameter and the resolved default; tools addressing a card, list or attachment by its own ID take no `boardId` (those IDs are globally unique)
 
 ### Common Patterns
 
@@ -159,13 +160,12 @@ this.server.registerTool(
 
 **Board ID Resolution**:
 ```typescript
-// Most methods accept optional boardId, falling back to default
-const effectiveBoardId = boardId || this.config.boardId;
+// Every board-scoped method routes through one resolver, so the precedence is
+// stated once: explicit argument, then the active board (ambient selection
+// only), then TRELLO_BOARD_ID
+const effectiveBoardId = this.resolveBoardId(boardId);
 if (!effectiveBoardId) {
-  throw new McpError(
-    ErrorCode.InvalidRequest,
-    'No board ID provided and no default board set'
-  );
+  throw this.noBoardError();
 }
 ```
 

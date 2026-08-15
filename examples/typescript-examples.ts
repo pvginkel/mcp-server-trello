@@ -100,11 +100,11 @@ class TrelloMCPClient {
     return this.callTool<TrelloList[]>('get_lists', { boardId });
   }
 
-  async getCardsByListId(listId: string, boardId?: string): Promise<TrelloCard[]> {
-    return this.callTool<TrelloCard[]>('get_cards_by_list_id', {
-      listId,
-      boardId,
-    });
+  // Card, list and attachment IDs are globally unique in Trello, so the tools
+  // that address one of those directly take no `boardId` - the ID alone is
+  // enough to reach the right object.
+  async getCardsByListId(listId: string): Promise<TrelloCard[]> {
+    return this.callTool<TrelloCard[]>('get_cards_by_list_id', { listId });
   }
 
   async addCardToList(params: {
@@ -115,11 +115,13 @@ class TrelloMCPClient {
     dueReminder?: number | null;
     start?: string;
     labels?: string[];
-    boardId?: string;
   }): Promise<TrelloCard> {
     return this.callTool<TrelloCard>('add_card_to_list', params);
   }
 
+  // `move_card` does still take a board: the target list lives on one, and the
+  // card may have to cross boards to reach it. Omit it and the server resolves
+  // the active board, then TRELLO_BOARD_ID.
   async moveCard(cardId: string, listId: string, boardId?: string): Promise<TrelloCard> {
     return this.callTool<TrelloCard>('move_card', {
       cardId,
@@ -137,7 +139,6 @@ class TrelloMCPClient {
     start?: string;
     dueComplete?: boolean;
     labels?: string[];
-    boardId?: string;
   }): Promise<TrelloCard> {
     return this.callTool<TrelloCard>('update_card_details', params);
   }
@@ -150,7 +151,6 @@ class TrelloMCPClient {
     cardId: string;
     imageUrl: string;
     name?: string;
-    boardId?: string;
   }): Promise<unknown> {
     return this.callTool('attach_image_to_card', params);
   }
@@ -159,6 +159,13 @@ class TrelloMCPClient {
     return this.callTool<Board[]>('list_boards');
   }
 
+  /**
+   * Only available when ambient selection is on - the default under the stdio
+   * transport. Under the HTTP transport it is off by default (one client is
+   * shared by every session), `set_active_board` is not registered at all, and
+   * this call fails. Pass `boardId` explicitly to the board-scoped tools
+   * instead, or set TRELLO_BOARD_ID.
+   */
   async setActiveBoard(boardId: string): Promise<Board> {
     return this.callTool<Board>('set_active_board', { boardId });
   }
