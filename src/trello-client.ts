@@ -153,6 +153,17 @@ export class TrelloClient {
   }
 
   /**
+   * The single source of truth for "which board does this call target?".
+   *
+   * Every board-scoped method routes through here, so the precedence — explicit
+   * argument, then the active board, then the env default — is stated once
+   * rather than re-derived at each call site.
+   */
+  private resolveBoardId(boardId: string | undefined): string | undefined {
+    return boardId || this.activeConfig.boardId || this.defaultBoardId;
+  }
+
+  /**
    * Check if workspace restriction is enabled
    */
   get hasWorkspaceRestriction(): boolean {
@@ -391,7 +402,7 @@ export class TrelloClient {
   }
 
   async getLists(boardId?: string): Promise<TrelloList[]> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -405,7 +416,7 @@ export class TrelloClient {
   }
 
   async getRecentActivity(boardId?: string, limit: number = 10, since?: string, before?: string): Promise<TrelloAction[]> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -497,7 +508,7 @@ export class TrelloClient {
   }
 
   async moveCard(boardId: string | undefined, cardId: string, listId: string, pos?: string | number): Promise<TrelloCard> {
-    const effectiveBoardId = boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.put(`/cards/${cardId}`, {
         idList: listId,
@@ -509,7 +520,7 @@ export class TrelloClient {
   }
 
   async addList(boardId: string | undefined, name: string): Promise<TrelloList> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -692,7 +703,7 @@ export class TrelloClient {
   // Short IDs are only unique within a board, so every short-ID lookup needs a board to
   // resolve against.
   private resolveShortLookupBoardId(boardId: string | undefined): string {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -813,9 +824,12 @@ export class TrelloClient {
       checklists = cardResponse.data.checklists || [];
     } else {
       // Fall back to board-level search
-      const effectiveBoardId = boardId || this.activeConfig.boardId;
+      const effectiveBoardId = this.resolveBoardId(boardId);
       if (!effectiveBoardId) {
-        throw new McpError(ErrorCode.InvalidParams, 'No board ID or card ID provided and no active board set');
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'boardId is required when no default board is configured'
+        );
       }
 
       const response = await this.axiosInstance.get<TrelloChecklist[]>(
@@ -854,9 +868,12 @@ export class TrelloClient {
       checklists = cardResponse.data.checklists || [];
     } else {
       // Fall back to board-level search
-      const effectiveBoardId = boardId || this.activeConfig.boardId;
+      const effectiveBoardId = this.resolveBoardId(boardId);
       if (!effectiveBoardId) {
-        throw new McpError(ErrorCode.InvalidParams, 'No board ID or card ID provided and no active board set');
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'boardId is required when no default board is configured'
+        );
       }
 
       const checklistsResponse = await this.axiosInstance.get<TrelloChecklist[]>(
@@ -899,9 +916,12 @@ export class TrelloClient {
       checklists = cardResponse.data.checklists || [];
     } else {
       // Fall back to board-level search
-      const effectiveBoardId = boardId || this.activeConfig.boardId;
+      const effectiveBoardId = this.resolveBoardId(boardId);
       if (!effectiveBoardId) {
-        throw new McpError(ErrorCode.InvalidParams, 'No board ID or card ID provided and no active board set');
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'boardId is required when no default board is configured'
+        );
       }
 
       const response = await this.axiosInstance.get<TrelloChecklist[]>(
@@ -947,9 +967,12 @@ export class TrelloClient {
       checklists = cardResponse.data.checklists || [];
     } else {
       // Fall back to board-level search
-      const effectiveBoardId = boardId || this.activeConfig.boardId;
+      const effectiveBoardId = this.resolveBoardId(boardId);
       if (!effectiveBoardId) {
-        throw new McpError(ErrorCode.InvalidParams, 'No board ID or card ID provided and no active board set');
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'boardId is required when no default board is configured'
+        );
       }
 
       const response = await this.axiosInstance.get<TrelloChecklist[]>(
@@ -1234,7 +1257,7 @@ export class TrelloClient {
 
   // Member management methods
   async getBoardMembers(boardId?: string): Promise<TrelloMember[]> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -1271,7 +1294,7 @@ export class TrelloClient {
 
   // Label management methods
   async getBoardLabels(boardId?: string): Promise<TrelloLabelDetails[]> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -1289,7 +1312,7 @@ export class TrelloClient {
     name: string,
     color?: string
   ): Promise<TrelloLabelDetails> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -1420,7 +1443,7 @@ export class TrelloClient {
 
   // Custom field management methods
   async getBoardCustomFields(boardId?: string): Promise<TrelloCustomFieldDefinition[]> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    const effectiveBoardId = this.resolveBoardId(boardId);
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
