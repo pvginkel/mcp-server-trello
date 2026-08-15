@@ -286,6 +286,51 @@ describe('TrelloClient', () => {
         idBoard: 'b2',
       });
     });
+
+    // Regression: moveCard used to resolve `boardId || defaultBoardId`, skipping
+    // the active board. After set_active_board(b2) it sent the *default* board
+    // alongside a list on the active one — a contradictory request.
+    it('should prefer the active board over the default board', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: { id: 'b2', name: 'Active' } });
+      mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1' } });
+
+      const client = createClient({ defaultBoardId: 'b1' });
+      await client.setActiveBoard('b2');
+      await client.moveCard(undefined, 'c1', 'l2');
+
+      expect(mockAxiosInstance.put).toHaveBeenCalledWith('/cards/c1', {
+        idList: 'l2',
+        idBoard: 'b2',
+      });
+    });
+  });
+
+  // These four resolved `boardId || activeConfig.boardId`, omitting the
+  // defaultBoardId term the other board-scoped methods carried. Equivalent in
+  // practice — the constructor seeds activeConfig.boardId from defaultBoardId —
+  // but the omission is the kind that stops being harmless the moment that
+  // seeding changes, so pin the behaviour.
+  describe('checklist board resolution', () => {
+    const cases = [
+      ['getChecklistItems', (c: TrelloClient) => c.getChecklistItems('Acceptance Criteria')],
+      ['addChecklistItem', (c: TrelloClient) => c.addChecklistItem('item', 'Acceptance Criteria')],
+      [
+        'findChecklistItemsByDescription',
+        (c: TrelloClient) => c.findChecklistItemsByDescription('needle'),
+      ],
+      ['getChecklistByName', (c: TrelloClient) => c.getChecklistByName('Acceptance Criteria')],
+    ] as const;
+
+    for (const [name, call] of cases) {
+      it(`${name} falls back to the default board`, async () => {
+        mockAxiosInstance.get.mockResolvedValue({ data: [] });
+
+        const client = createClient({ defaultBoardId: 'b1' });
+        await call(client).catch(() => {});
+
+        expect(mockAxiosInstance.get).toHaveBeenCalledWith('/boards/b1/checklists');
+      });
+    }
   });
 
   describe('addList', () => {
