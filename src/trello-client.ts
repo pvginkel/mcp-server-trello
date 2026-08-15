@@ -487,6 +487,15 @@ export class TrelloClient {
     });
   }
 
+  async unarchiveCard(boardId: string | undefined, cardId: string): Promise<TrelloCard> {
+    return this.handleRequest(async () => {
+      const response = await this.axiosInstance.put(`/cards/${cardId}`, {
+        closed: false,
+      });
+      return response.data;
+    });
+  }
+
   async moveCard(boardId: string | undefined, cardId: string, listId: string, pos?: string | number): Promise<TrelloCard> {
     const effectiveBoardId = boardId || this.defaultBoardId;
     return this.handleRequest(async () => {
