@@ -71,9 +71,9 @@ function bootServer(
 ): Promise<HttpServerHandle & { config: ReturnType<typeof readHttpConfig> }> {
   process.env.TRELLO_API_KEY = 'test-key';
   process.env.TRELLO_TOKEN = 'test-token';
-  const client = createTrelloClient();
-  const health = new TrelloHealthEndpoints(client);
   const config = readHttpConfig(env);
+  const client = createTrelloClient({ ambientSelection: config.ambientSelection });
+  const health = new TrelloHealthEndpoints(client);
   return startHttpServer(client, health, config).then(handle => ({ ...handle, config }));
 }
 
@@ -108,6 +108,15 @@ describe('Streamable HTTP transport (no auth)', () => {
     const names = tools.map(t => t.name);
     expect(names).toContain('get_cards_by_list_id');
     expect(names).toContain('list_boards');
+
+    // One TrelloClient is shared by every session here, so a board selected by
+    // one would retarget another's unqualified calls. The selection tools are
+    // not registered under HTTP.
+    expect(names).not.toContain('set_active_board');
+    expect(names).not.toContain('set_active_workspace');
+    expect(names).not.toContain('get_active_board_info');
+    // Explicitly scoped, reads no ambient state — stays.
+    expect(names).toContain('list_boards_in_workspace');
 
     await client.close();
   });

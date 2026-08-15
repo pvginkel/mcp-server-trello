@@ -82,9 +82,9 @@ describe('ambientSelection', () => {
     it('throws on an unqualified board-scoped call when off with no env default', async () => {
       const client = createClient({ ambientSelection: false });
 
-      await expect(client.getLists()).rejects.toThrow(
-        'boardId is required when no default board is configured'
-      );
+      // The message names the mode: an agent that omitted boardId needs to
+      // learn there is no active board to fall back on, not just that it failed.
+      await expect(client.getLists()).rejects.toThrow(/this server holds no active board/);
       expect(mockAxiosInstance.get).not.toHaveBeenCalled();
     });
   });

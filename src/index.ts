@@ -11,10 +11,11 @@ import { readHttpConfig, startHttpServer } from './http-server.js';
 
 /**
  * Build the shared {@link TrelloClient} from environment variables. The client
- * holds the mutable board/workspace selection and is shared across every MCP
- * session (stdio has one session; HTTP shares one client across sessions).
+ * is shared across every MCP session (stdio has one session; HTTP shares one
+ * client across sessions), which is why `ambientSelection` exists: with it on,
+ * the board/workspace selection it holds is shared too.
  */
-export function createTrelloClient(): TrelloClient {
+export function createTrelloClient(opts?: { ambientSelection?: boolean }): TrelloClient {
   const apiKey = process.env.TRELLO_API_KEY;
   const token = process.env.TRELLO_TOKEN;
   const defaultBoardId = process.env.TRELLO_BOARD_ID;
@@ -38,6 +39,7 @@ export function createTrelloClient(): TrelloClient {
     defaultBoardId,
     boardId: defaultBoardId,
     allowedWorkspaceIds,
+    ambientSelection: opts?.ambientSelection,
   });
 }
 
@@ -51,10 +53,16 @@ class TrelloServer {
   private server: McpServer;
   private trelloClient: TrelloClient;
   private healthEndpoints: TrelloHealthEndpoints;
+  private ambientSelection: boolean;
 
-  constructor(trelloClient: TrelloClient, healthEndpoints: TrelloHealthEndpoints) {
+  constructor(
+    trelloClient: TrelloClient,
+    healthEndpoints: TrelloHealthEndpoints,
+    ambientSelection: boolean = true
+  ) {
     this.trelloClient = trelloClient;
     this.healthEndpoints = healthEndpoints;
+    this.ambientSelection = ambientSelection;
 
     this.server = new McpServer({
       name: 'trello-server',
@@ -68,6 +76,26 @@ class TrelloServer {
   /** The underlying MCP server, ready to connect to a transport. */
   getServer(): McpServer {
     return this.server;
+  }
+
+  /**
+   * Text for the optional `boardId` parameter. Tools are registered per mode,
+   * so this can tell the truth in each: "uses default" is simply false with
+   * ambient selection off and no TRELLO_BOARD_ID, and an agent that reads it
+   * will omit the argument and get an error it has no way to interpret.
+   */
+  private get boardIdDescription(): string {
+    return this.ambientSelection
+      ? 'ID of the Trello board (uses default if not provided)'
+      : 'ID of the Trello board (required unless TRELLO_BOARD_ID is set; ' +
+          'this server holds no active board)';
+  }
+
+  private get targetBoardIdDescription(): string {
+    return this.ambientSelection
+      ? 'ID of the target Trello board (where the listId resides, uses default if not provided)'
+      : 'ID of the target Trello board (where the listId resides; ' +
+          'required unless TRELLO_BOARD_ID is set)';
   }
 
   private handleError(error: unknown) {
@@ -146,7 +174,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ boardId }) => {
@@ -171,7 +199,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
           limit: z
             .number()
             .optional()
@@ -343,9 +371,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe(
-              'ID of the target Trello board (where the listId resides, uses default if not provided)'
-            ),
+            .describe(this.targetBoardIdDescription),
           cardId: z.string().describe('ID of the card to move'),
           listId: z.string().describe('ID of the target list'),
           pos: z
@@ -378,7 +404,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
           name: z.string().describe('Name of the new list'),
         },
       },
@@ -748,32 +774,36 @@ class TrelloServer {
       }
     );
 
-    // Set active board
-    this.server.registerTool(
-      'set_active_board',
-      {
-        title: 'Set Active Board',
-        description: 'Set the active board for future operations',
-        inputSchema: {
-          boardId: z.string().describe('ID of the board to set as active'),
+    // Ambient selection only: with it off there is nothing to select, and a
+    // shared client means one session's choice would retarget another's calls.
+    if (this.ambientSelection) {
+      // Set active board
+      this.server.registerTool(
+        'set_active_board',
+        {
+          title: 'Set Active Board',
+          description: 'Set the active board for future operations',
+          inputSchema: {
+            boardId: z.string().describe('ID of the board to set as active'),
+          },
         },
-      },
-      async ({ boardId }) => {
-        try {
-          const board = await this.trelloClient.setActiveBoard(boardId);
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Successfully set active board to "${board.name}" (${board.id})`,
-              },
-            ],
-          };
-        } catch (error) {
-          return this.handleError(error);
+        async ({ boardId }) => {
+          try {
+            const board = await this.trelloClient.setActiveBoard(boardId);
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Successfully set active board to "${board.name}" (${board.id})`,
+                },
+              ],
+            };
+          } catch (error) {
+            return this.handleError(error);
+          }
         }
-      }
-    );
+      );
+    }
 
     // List workspaces
     this.server.registerTool(
@@ -840,32 +870,36 @@ class TrelloServer {
       }
     );
 
-    // Set active workspace
-    this.server.registerTool(
-      'set_active_workspace',
-      {
-        title: 'Set Active Workspace',
-        description: 'Set the active workspace for future operations',
-        inputSchema: {
-          workspaceId: z.string().describe('ID of the workspace to set as active'),
+    // Ambient selection only: with it off there is nothing to select, and a
+    // shared client means one session's choice would retarget another's calls.
+    if (this.ambientSelection) {
+      // Set active workspace
+      this.server.registerTool(
+        'set_active_workspace',
+        {
+          title: 'Set Active Workspace',
+          description: 'Set the active workspace for future operations',
+          inputSchema: {
+            workspaceId: z.string().describe('ID of the workspace to set as active'),
+          },
         },
-      },
-      async ({ workspaceId }) => {
-        try {
-          const workspace = await this.trelloClient.setActiveWorkspace(workspaceId);
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Successfully set active workspace to "${workspace.displayName}" (${workspace.id})`,
-              },
-            ],
-          };
-        } catch (error) {
-          return this.handleError(error);
+        async ({ workspaceId }) => {
+          try {
+            const workspace = await this.trelloClient.setActiveWorkspace(workspaceId);
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Successfully set active workspace to "${workspace.displayName}" (${workspace.id})`,
+                },
+              ],
+            };
+          } catch (error) {
+            return this.handleError(error);
+          }
         }
-      }
-    );
+      );
+    }
 
     // List boards in workspace
     this.server.registerTool(
@@ -889,45 +923,49 @@ class TrelloServer {
       }
     );
 
-    // Get active board info
-    this.server.registerTool(
-      'get_active_board_info',
-      {
-        title: 'Get Active Board Info',
-        description: 'Get information about the currently active board',
-        inputSchema: {},
-      },
-      async () => {
-        try {
-          const boardId = this.trelloClient.activeBoardId;
-          if (!boardId) {
+    // Ambient selection only: with it off there is nothing to select, and a
+    // shared client means one session's choice would retarget another's calls.
+    if (this.ambientSelection) {
+      // Get active board info
+      this.server.registerTool(
+        'get_active_board_info',
+        {
+          title: 'Get Active Board Info',
+          description: 'Get information about the currently active board',
+          inputSchema: {},
+        },
+        async () => {
+          try {
+            const boardId = this.trelloClient.activeBoardId;
+            if (!boardId) {
+              return {
+                content: [{ type: 'text' as const, text: 'No active board set' }],
+                isError: true,
+              };
+            }
+            const board = await this.trelloClient.getBoardById(boardId);
             return {
-              content: [{ type: 'text' as const, text: 'No active board set' }],
-              isError: true,
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(
+                    {
+                      ...board,
+                      isActive: true,
+                      activeWorkspaceId: this.trelloClient.activeWorkspaceId || 'Not set',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
             };
+          } catch (error) {
+            return this.handleError(error);
           }
-          const board = await this.trelloClient.getBoardById(boardId);
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  {
-                    ...board,
-                    isActive: true,
-                    activeWorkspaceId: this.trelloClient.activeWorkspaceId || 'Not set',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return this.handleError(error);
         }
-      }
-    );
+      );
+    }
 
     // Get card details
     this.server.registerTool(
@@ -968,7 +1006,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
           cardShort: z
             .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
             .describe(
@@ -1168,7 +1206,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ name, cardId, boardId }) => {
@@ -1198,7 +1236,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ text, checkListName, cardId, boardId }) => {
@@ -1227,7 +1265,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ description, cardId, boardId }) => {
@@ -1259,7 +1297,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ cardId, boardId }) => {
@@ -1288,7 +1326,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ name, cardId, boardId }) => {
@@ -1394,7 +1432,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ boardId }) => {
@@ -1463,7 +1501,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ boardId }) => {
@@ -1487,7 +1525,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
           name: z.string().describe('Name of the label'),
           color: z
             .string()
@@ -1706,7 +1744,7 @@ class TrelloServer {
           boardId: z
             .string()
             .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
+            .describe(this.boardIdDescription),
         },
       },
       async ({ boardId }) => {
@@ -1945,20 +1983,35 @@ class TrelloServer {
  * a function so it is hoisted for the (safe, call-time-only) import cycle with
  * {@link ./http-server}.
  */
-export function createMcpServer(client: TrelloClient, health: TrelloHealthEndpoints): McpServer {
-  return new TrelloServer(client, health).getServer();
+export function createMcpServer(
+  client: TrelloClient,
+  health: TrelloHealthEndpoints,
+  opts?: { ambientSelection?: boolean }
+): McpServer {
+  // The client is the authority: it is what would refuse the call. Registering a
+  // tool the client rejects buys nothing but a confusing error, so default to
+  // what the client can actually do rather than to a second, drifting copy.
+  return new TrelloServer(
+    client,
+    health,
+    opts?.ambientSelection ?? client.hasAmbientSelection
+  ).getServer();
 }
 
 async function main(): Promise<void> {
-  const client = createTrelloClient();
+  // Transport config first: it decides whether ambient selection is on, and
+  // therefore whether the persisted board on disk should be read at all.
+  const httpConfig = readHttpConfig();
+  const client = createTrelloClient({ ambientSelection: httpConfig.ambientSelection });
   const health = new TrelloHealthEndpoints(client);
 
   // Load configuration once, before serving (best effort; fall back to defaults).
-  await client.loadConfig().catch(() => {
-    // Continue with default config if loading fails
-  });
-
-  const httpConfig = readHttpConfig();
+  // A no-op when ambient selection is off, but skip it explicitly all the same.
+  if (httpConfig.ambientSelection) {
+    await client.loadConfig().catch(() => {
+      // Continue with default config if loading fails
+    });
+  }
 
   if (httpConfig.transport === 'http') {
     const { close } = await startHttpServer(client, health, httpConfig);
@@ -1970,7 +2023,9 @@ async function main(): Promise<void> {
   }
 
   // Default: stdio transport — single session, backward compatible.
-  const server = createMcpServer(client, health);
+  const server = createMcpServer(client, health, {
+    ambientSelection: httpConfig.ambientSelection,
+  });
   const transport = new StdioServerTransport();
   process.on('SIGINT', async () => {
     await server.close();
