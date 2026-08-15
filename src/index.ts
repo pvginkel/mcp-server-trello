@@ -89,12 +89,8 @@ class TrelloServer {
       {
         title: 'Get Cards by List ID',
         description:
-          'Fetch cards from a specific Trello list on a specific board. Optionally filter by name substring (nameFilter) and/or label ID (labelId); both are applied client-side and compose. Each card carries a "reporter" field naming the member who created it. Descriptions are previewed by default to keep responses compact; set fields without "desc" to omit descriptions, or increase descMaxLength/omitDescThresholdBytes and use get_card for full details.',
+          'Fetch cards from a specific Trello list. Optionally filter by name substring (nameFilter) and/or label ID (labelId); both are applied client-side and compose. Each card carries a "reporter" field naming the member who created it. Descriptions are previewed by default to keep responses compact; set fields without "desc" to omit descriptions, or increase descMaxLength/omitDescThresholdBytes and use get_card for full details.',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
           listId: z.string().describe('ID of the Trello list'),
           fields: z
             .string()
@@ -208,12 +204,8 @@ class TrelloServer {
       'add_card_to_list',
       {
         title: 'Add Card to List',
-        description: 'Add a new card to a specified list on a specific board',
+        description: 'Add a new card to a specified list',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
           listId: z.string().describe('ID of the list to add the card to'),
           name: z.string().describe('Name of the card'),
           description: z.string().optional().describe('Description of the card'),
@@ -238,7 +230,7 @@ class TrelloServer {
       },
       async args => {
         try {
-          const card = await this.trelloClient.addCard(args.boardId, args);
+          const card = await this.trelloClient.addCard(args);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }],
           };
@@ -253,12 +245,8 @@ class TrelloServer {
       'update_card_details',
       {
         title: 'Update Card Details',
-        description: "Update an existing card's details on a specific board",
+        description: "Update an existing card's details",
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
           cardId: z.string().describe('ID of the card to update'),
           name: z.string().optional().describe('New name for the card'),
           description: z.string().optional().describe('New description for the card'),
@@ -290,7 +278,7 @@ class TrelloServer {
       },
       async args => {
         try {
-          const card = await this.trelloClient.updateCard(args.boardId, args);
+          const card = await this.trelloClient.updateCard(args);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }],
           };
@@ -305,18 +293,14 @@ class TrelloServer {
       'archive_card',
       {
         title: 'Archive Card',
-        description: 'Send a card to the archive on a specific board',
+        description: 'Send a card to the archive',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
           cardId: z.string().describe('ID of the card to archive'),
         },
       },
-      async ({ boardId, cardId }) => {
+      async ({ cardId }) => {
         try {
-          const card = await this.trelloClient.archiveCard(boardId, cardId);
+          const card = await this.trelloClient.archiveCard(cardId);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }],
           };
@@ -332,18 +316,14 @@ class TrelloServer {
       {
         title: 'Un-archive Card',
         description:
-          'Return a card from the archive to its list on a specific board (the reverse of archive_card)',
+          'Return a card from the archive to its list (the reverse of archive_card)',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
           cardId: z.string().describe('ID of the card to un-archive'),
         },
       },
-      async ({ boardId, cardId }) => {
+      async ({ cardId }) => {
         try {
-          const card = await this.trelloClient.unarchiveCard(boardId, cardId);
+          const card = await this.trelloClient.unarchiveCard(cardId);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }],
           };
@@ -419,18 +399,14 @@ class TrelloServer {
       'archive_list',
       {
         title: 'Archive List',
-        description: 'Send a list to the archive on a specific board',
+        description: 'Send a list to the archive',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe('ID of the Trello board (uses default if not provided)'),
           listId: z.string().describe('ID of the list to archive'),
         },
       },
-      async ({ boardId, listId }) => {
+      async ({ listId }) => {
         try {
-          const list = await this.trelloClient.archiveList(boardId, listId);
+          const list = await this.trelloClient.archiveList(listId);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }],
           };
@@ -551,14 +527,8 @@ class TrelloServer {
       'attach_image_to_card',
       {
         title: 'Attach Image to Card',
-        description: 'Attach an image to a card from a URL on a specific board',
+        description: 'Attach an image to a card from a URL',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe(
-              'ID of the Trello board where the card exists (uses default if not provided)'
-            ),
           cardId: z.string().describe('ID of the card to attach the image to'),
           imageUrl: z.string().describe('URL of the image to attach'),
           name: z
@@ -568,10 +538,9 @@ class TrelloServer {
             .describe('Optional name for the attachment (defaults to "Image Attachment")'),
         },
       },
-      async ({ boardId, cardId, imageUrl, name }) => {
+      async ({ cardId, imageUrl, name }) => {
         try {
           const attachment = await this.trelloClient.attachImageToCard(
-            boardId,
             cardId,
             imageUrl,
             name
@@ -590,14 +559,8 @@ class TrelloServer {
       'attach_file_to_card',
       {
         title: 'Attach File to Card',
-        description: 'Attach any file to a card from a URL on a specific board',
+        description: 'Attach any file to a card from a URL',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe(
-              'ID of the Trello board where the card exists (uses default if not provided)'
-            ),
           cardId: z.string().describe('ID of the card to attach the file to'),
           fileUrl: z.string().describe('URL of the file to attach'),
           name: z
@@ -613,10 +576,9 @@ class TrelloServer {
             ),
         },
       },
-      async ({ boardId, cardId, fileUrl, name, mimeType }) => {
+      async ({ cardId, fileUrl, name, mimeType }) => {
         try {
           const attachment = await this.trelloClient.attachFileToCard(
-            boardId,
             cardId,
             fileUrl,
             name,
@@ -647,12 +609,6 @@ class TrelloServer {
         description:
           'Attach binary data (image, markdown, PDF, text, etc.) to a card from base64-encoded data or a data URL. Use this for any non-image content. For image/screenshot uploads with PNG defaults, see attach_image_data_to_card.',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe(
-              'ID of the Trello board where the card exists (uses default if not provided)'
-            ),
           cardId: z.string().describe('ID of the card to attach the data to'),
           data: z
             .string()
@@ -673,10 +629,9 @@ class TrelloServer {
             ),
         },
       },
-      async ({ boardId, cardId, data, name, mimeType }) => {
+      async ({ cardId, data, name, mimeType }) => {
         try {
           const attachment = await this.trelloClient.attachDataToCard(
-            boardId,
             cardId,
             data,
             name,
@@ -699,12 +654,6 @@ class TrelloServer {
         description:
           'Attach an image to a card from base64 data or a data URL. Image-flavored convenience over attach_data_to_card: defaults assume PNG when mimeType/name are omitted, suitable for screenshot pasting. For non-image content, use attach_data_to_card.',
         inputSchema: {
-          boardId: z
-            .string()
-            .optional()
-            .describe(
-              'ID of the Trello board where the card exists (uses default if not provided)'
-            ),
           cardId: z.string().describe('ID of the card to attach the image to'),
           imageData: z.string().describe('Base64 encoded image data or data URL (e.g., data:image/png;base64,...)'),
           name: z
@@ -718,10 +667,9 @@ class TrelloServer {
             .describe('Optional MIME type (default: image/png)'),
         },
       },
-      async ({ boardId, cardId, imageData, name, mimeType }) => {
+      async ({ cardId, imageData, name, mimeType }) => {
         try {
           const attachment = await this.trelloClient.attachImageDataToCard(
-            boardId,
             cardId,
             imageData,
             name,
