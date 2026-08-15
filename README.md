@@ -582,6 +582,20 @@ Send a card to the archive.
 }
 ```
 
+### unarchive\_card
+
+Return a card from the archive to its list. The reverse of `archive_card`; the card reappears in the list it was archived from.
+
+```typescript
+{
+  name: 'unarchive_card',
+  arguments: {
+    boardId?: string, // Optional: ID of the board (uses default if not provided)
+    cardId: string    // ID of the card to un-archive
+  }
+}
+```
+
 ### add\_list\_to\_board
 
 Add a new list to a board.

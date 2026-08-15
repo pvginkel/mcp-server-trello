@@ -245,6 +245,26 @@ describe('TrelloClient', () => {
     });
   });
 
+  describe('unarchiveCard', () => {
+    it('should set closed to false', async () => {
+      mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1', closed: false } });
+
+      const client = createClient();
+      await client.unarchiveCard(undefined, 'c1');
+
+      expect(mockAxiosInstance.put).toHaveBeenCalledWith('/cards/c1', { closed: false });
+    });
+
+    it('should return the restored card', async () => {
+      mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1', closed: false, idList: 'l1' } });
+
+      const client = createClient();
+      const card = await client.unarchiveCard('b1', 'c1');
+
+      expect(card).toEqual({ id: 'c1', closed: false, idList: 'l1' });
+    });
+  });
+
   describe('moveCard', () => {
     it('should update card list', async () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1' } });

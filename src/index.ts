@@ -326,6 +326,33 @@ class TrelloServer {
       }
     );
 
+    // Un-archive a card
+    this.server.registerTool(
+      'unarchive_card',
+      {
+        title: 'Un-archive Card',
+        description:
+          'Return a card from the archive to its list on a specific board (the reverse of archive_card)',
+        inputSchema: {
+          boardId: z
+            .string()
+            .optional()
+            .describe('ID of the Trello board (uses default if not provided)'),
+          cardId: z.string().describe('ID of the card to un-archive'),
+        },
+      },
+      async ({ boardId, cardId }) => {
+        try {
+          const card = await this.trelloClient.unarchiveCard(boardId, cardId);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }],
+          };
+        } catch (error) {
+          return this.handleError(error);
+        }
+      }
+    );
+
     // Move a card
     this.server.registerTool(
       'move_card',
