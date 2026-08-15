@@ -180,9 +180,15 @@ session it had ever served, at roughly 1.15 MB apiece.
 So sessions are swept once they have been idle for
 `TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT` seconds (30 minutes by default). A session
 counts as active while it is receiving requests *and* for as long as it holds an
-open response, so a client parked on a long-lived SSE stream is never cut off. A
-client whose session has been reaped gets `404` and re-initializes, which is the
-behaviour the spec already requires it to handle.
+open response, so a client parked on a long-lived SSE stream is never cut off.
+
+That hold is what makes the sweep safe, because recovery from a reap is not
+guaranteed. A client whose session has gone gets `404` on its next request, and
+what it does next is up to the client — the spec permits re-initializing but does
+not require it. Claude Code re-initializes and carries on; FastMCP's Python client
+raises `McpError: Session terminated` and fails the call. Treat the timeout as a
+collector for sessions whose clients are gone, not as a cap on how long a client
+may stay.
 
 When this server sits behind a proxy that keeps its own upstream session (such as
 an MCP filtering proxy), give this timeout more room than the proxy's, so the
