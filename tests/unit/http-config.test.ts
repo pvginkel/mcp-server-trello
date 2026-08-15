@@ -31,6 +31,37 @@ describe('readHttpConfig', () => {
     expect(config.token).toBe('s3cret');
   });
 
+  describe('ambientSelection', () => {
+    it('follows the transport when unset', () => {
+      expect(readHttpConfig({}).ambientSelection).toBe(true);
+      expect(readHttpConfig({ TRELLO_MCP_TRANSPORT: 'http' }).ambientSelection).toBe(false);
+    });
+
+    it('honours an explicit override in both directions', () => {
+      expect(
+        readHttpConfig({ TRELLO_MCP_TRANSPORT: 'http', TRELLO_MCP_AMBIENT_SELECTION: 'on' })
+          .ambientSelection
+      ).toBe(true);
+      expect(readHttpConfig({ TRELLO_MCP_AMBIENT_SELECTION: 'off' }).ambientSelection).toBe(false);
+    });
+
+    it('is case/space tolerant, like the neighbouring parsers', () => {
+      expect(readHttpConfig({ TRELLO_MCP_AMBIENT_SELECTION: '  OFF ' }).ambientSelection).toBe(
+        false
+      );
+      expect(readHttpConfig({ TRELLO_MCP_AMBIENT_SELECTION: '' }).ambientSelection).toBe(true);
+    });
+
+    it('rejects anything that is not on or off', () => {
+      expect(() => readHttpConfig({ TRELLO_MCP_AMBIENT_SELECTION: 'true' })).toThrow(
+        /TRELLO_MCP_AMBIENT_SELECTION/
+      );
+      expect(() => readHttpConfig({ TRELLO_MCP_AMBIENT_SELECTION: '1' })).toThrow(
+        /TRELLO_MCP_AMBIENT_SELECTION/
+      );
+    });
+  });
+
   it('rejects an invalid port', () => {
     expect(() => readHttpConfig({ TRELLO_MCP_HTTP_PORT: 'abc' })).toThrow(/TRELLO_MCP_HTTP_PORT/);
     expect(() => readHttpConfig({ TRELLO_MCP_HTTP_PORT: '0' })).toThrow(/TRELLO_MCP_HTTP_PORT/);

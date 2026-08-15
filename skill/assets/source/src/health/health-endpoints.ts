@@ -214,9 +214,16 @@ export class TrelloHealthEndpoints {
     };
 
     try {
-      // Check if we have an active board
-      const boardId = this.trelloClient.activeBoardId;
+      // Check if we have a board to be consistent about
+      const boardId = this.trelloClient.effectiveBoardId;
       if (!boardId) {
+        if (!this.trelloClient.hasAmbientSelection) {
+          // No board is the expected shape of this deployment, not an
+          // inconsistency: every board-scoped call carries its own board.
+          results.statistics.board_note =
+            'No board configured and ambient selection is disabled; board checks skipped';
+          return results;
+        }
         results.consistent = false;
         results.issues.push('No active board configured');
         return results;
@@ -283,11 +290,19 @@ export class TrelloHealthEndpoints {
     const recommendations: string[] = [];
 
     if (metadataReport.issues.some((issue: string) => issue.includes('No active board'))) {
-      recommendations.push('Use set_active_board tool to configure an active board');
+      recommendations.push(
+        this.trelloClient.hasAmbientSelection
+          ? 'Use set_active_board tool to configure an active board'
+          : 'Set TRELLO_BOARD_ID, or pass boardId explicitly on board-scoped calls'
+      );
     }
 
     if (metadataReport.issues.some((issue: string) => issue.includes('closed/archived'))) {
-      recommendations.push('Set a different active board that is not closed/archived');
+      recommendations.push(
+        this.trelloClient.hasAmbientSelection
+          ? 'Set a different active board that is not closed/archived'
+          : 'Target a board that is not closed/archived'
+      );
     }
 
     if (metadataReport.issues.some((issue: string) => issue.includes('no lists'))) {
@@ -458,6 +473,17 @@ export class TrelloHealthEndpoints {
     };
 
     try {
+      // Setting an active board is the only repair this knows how to make, and
+      // it is exactly what ambient selection off forbids. Say that, rather than
+      // reporting "no repairable issues found" as if something had been looked for.
+      if (!this.trelloClient.hasAmbientSelection) {
+        result.success = false;
+        result.message =
+          'No repairs available: the only supported repair is setting an active board, ' +
+          'and ambient board/workspace selection is disabled';
+        return result;
+      }
+
       // Check for repairable issues
       const boardCheck = healthReport.checks.find(c => c.name === 'board_access');
 

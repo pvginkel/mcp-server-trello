@@ -86,10 +86,12 @@ The server can be configured using environment variables. Create a `.env` file i
 TRELLO_API_KEY=your-api-key
 TRELLO_TOKEN=your-token
 
-# Optional (Deprecated): Default board ID (can be changed later using set_active_board)
+# Optional (Deprecated): Default board ID (can be changed later using set_active_board,
+# which exists only when ambient selection is on — see TRELLO_MCP_AMBIENT_SELECTION)
 TRELLO_BOARD_ID=your-board-id
 
-# Optional: Initial workspace ID (can be changed later using set_active_workspace)
+# Optional: Initial workspace ID (can be changed later using set_active_workspace,
+# which exists only when ambient selection is on)
 TRELLO_WORKSPACE_ID=your-workspace-id
 
 # Optional: HTTPS proxy URL (for corporate proxies or restricted networks)
@@ -125,6 +127,7 @@ environment variables:
 | `TRELLO_MCP_HTTP_TOKEN` | *(unset)* | If set, every request must send `Authorization: Bearer <token>`. |
 | `TRELLO_MCP_HTTP_ALLOWED_HOSTS` | derived from `host:port` | Comma-separated `Host` header allow-list for DNS-rebinding protection. |
 | `TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT` | `1800` | Seconds a session may sit idle before it is closed and forgotten (see [Session lifetime](#session-lifetime)). `0` disables reaping. |
+| `TRELLO_MCP_AMBIENT_SELECTION` | `on` under stdio, `off` under HTTP | Whether a board or workspace selection may be held across calls (see [Ambient board and workspace selection](#ambient-board-and-workspace-selection)). Accepts `on` or `off`; any other value is rejected at startup. |
 
 Start it over HTTP:
 
@@ -192,17 +195,39 @@ inner session always outlives the outer one.
 
 Starting with version 0.3.0, the MCP server supports multiple ways to work with boards:
 
-1.  **Multi-board support**: All methods now accept an optional `boardId` parameter
+1.  **Multi-board support**: Board-scoped methods accept an optional `boardId` parameter
        - Omit `TRELLO_BOARD_ID` and provide `boardId` in each API call
        - Set `TRELLO_BOARD_ID` as default and optionally override with `boardId` parameter
+       - Tools that address a card, list or attachment by its own ID take no `boardId`: those IDs are globally unique in Trello
 
-2.  **Dynamic board selection**: Use workspace management tools
+2.  **Dynamic board selection**: Use workspace management tools (available when ambient selection is on — see below)
        - The `TRELLO_BOARD_ID` in your `.env` file is used as the initial/default board ID
        - You can change the active board at any time using the `set_active_board` tool
        - The selected board persists between server restarts (stored in `~/.trello-mcp/config.json`)
        - Similarly, you can set and persist an active workspace using `set_active_workspace`
 
 This allows you to work with multiple boards and workspaces without restarting the server.
+
+#### Ambient board and workspace selection
+
+Holding a board or workspace selection across calls is *ambient selection*, and it is
+controlled by `TRELLO_MCP_AMBIENT_SELECTION`. It is on by default under stdio and off by
+default under HTTP: a single HTTP instance shares one Trello client across every MCP
+session, so one client's `set_active_board` would silently retarget another client's next
+unqualified call — no error, just the wrong board. The selection persisted in
+`~/.trello-mcp/config.json` leaks the same way across restarts and unrelated runs.
+
+When ambient selection is off:
+
+- `set_active_board`, `set_active_workspace` and `get_active_board_info` are not registered at all — they do not appear in `tools/list`
+- Board resolution is: explicit `boardId` argument, then `TRELLO_BOARD_ID`. There is no active board
+- Workspace targeting is explicit only — under `TRELLO_ALLOWED_WORKSPACES`, `create_board` requires an explicit `idOrganization`
+- `~/.trello-mcp/config.json` is never read or written
+- Board-scoped health checks report "not checked" and stay healthy when there is no `TRELLO_BOARD_ID`, and `perform_system_repair` reports that no repairs are available, because setting an active board is the only repair it knows
+- `list_boards_in_workspace` is unaffected: it takes an explicit `workspaceId`
+
+`TRELLO_BOARD_ID` still works in both modes. Set `TRELLO_MCP_AMBIENT_SELECTION=on` to keep
+the stdio behaviour under HTTP, or `off` to require explicit targeting under stdio.
 
 ### Workspace Access Restriction
 
@@ -219,6 +244,8 @@ When `TRELLO_ALLOWED_WORKSPACES` is set:
 - `list_boards_in_workspace` rejects non-allowed workspace IDs
 - `create_board` rejects creation in non-allowed workspaces
 
+With ambient selection off there is no active workspace to fall back on, so `create_board` requires an explicit `idOrganization` under this restriction.
+
 Example configuration:
 ```bash
 # Only allow access to two specific workspaces
@@ -228,6 +255,9 @@ TRELLO_ALLOWED_WORKSPACES=697c549ce04dc460af133a75,5f8a3b2c1d4e5f6a7b8c9d0e
 If `TRELLO_ALLOWED_WORKSPACES` is not set or empty, all workspaces the token has access to will be available (default behaviour).
 
 #### Example Workflow
+
+Steps 2, 4 and 5 require ambient selection (on by default under stdio); with it off those
+tools are not registered, and every call names its board or workspace explicitly instead.
 
 1.  Start by listing available boards:
 
@@ -491,7 +521,6 @@ Fetch cards from a specific list, optionally filtered by name substring and/or l
 {
   name: 'get_cards_by_list_id',
   arguments: {
-    boardId?: string,    // Optional: ID of the board (uses default if not provided)
     listId: string,      // ID of the Trello list
     fields?: string,     // Optional: comma-separated fields to return (e.g. "name,idShort,labels")
     nameFilter?: string, // Optional: case-insensitive substring to filter cards by name
@@ -537,7 +566,6 @@ Add a new card to a specified list.
 {
   name: 'add_card_to_list',
   arguments: {
-    boardId?: string,     // Optional: ID of the board (uses default if not provided)
     listId: string,       // ID of the list to add the card to
     name: string,         // Name of the card
     description?: string, // Optional: Description of the card
@@ -556,7 +584,6 @@ Update an existing card's details.
 {
   name: 'update_card_details',
   arguments: {
-    boardId?: string,     // Optional: ID of the board (uses default if not provided)
     cardId: string,       // ID of the card to update
     name?: string,        // Optional: New name for the card
     description?: string, // Optional: New description
@@ -576,7 +603,6 @@ Send a card to the archive.
 {
   name: 'archive_card',
   arguments: {
-    boardId?: string, // Optional: ID of the board (uses default if not provided)
     cardId: string    // ID of the card to archive
   }
 }
@@ -590,7 +616,6 @@ Return a card from the archive to its list. The reverse of `archive_card`; the c
 {
   name: 'unarchive_card',
   arguments: {
-    boardId?: string, // Optional: ID of the board (uses default if not provided)
     cardId: string    // ID of the card to un-archive
   }
 }
@@ -618,7 +643,6 @@ Send a list to the archive.
 {
   name: 'archive_list',
   arguments: {
-    boardId?: string, // Optional: ID of the board (uses default if not provided)
     listId: string    // ID of the list to archive
   }
 }
@@ -689,7 +713,6 @@ Attach an image to a card directly from a URL.
 {
   name: 'attach_image_to_card',
   arguments: {
-    boardId?: string, // Optional: ID of the board (uses default if not provided)
     cardId: string,  nbsp; // ID of the card to attach the image to
     imageUrl: string, // URL of the image to attach
     name?: string     // Optional: Name for the attachment (defaults to "Image Attachment")
@@ -705,7 +728,6 @@ Attach any type of file to a card from a URL or a local file path (e.g., `file:/
 {
   name: 'attach_file_to_card',
 nbsp; arguments: {
-    boardId?: string,  // Optional: ID of the board (uses default if not provided)
     cardId: string,s;   // ID of the card to attach the file to
     fileUrl: string,   // URL or local file path (using the file:// protocol) of the file to attach
     name?: string,     // Optional: Name for the attachment (defaults to the file name for local files)
@@ -787,6 +809,9 @@ List all boards the user has access to.
 
 Set the active board for future operations.
 
+> **Note:** Registered only when ambient selection is on — the default under stdio, and off
+> by default under HTTP. See [Ambient board and workspace selection](#ambient-board-and-workspace-selection).
+
 ```typescript
 {
   name: 'set_active_board',
@@ -810,6 +835,9 @@ s; name: 'list_workspaces',
 ### set\_active\_workspace
 
 Set the active workspace for future operations.
+
+> **Note:** Registered only when ambient selection is on — the default under stdio, and off
+> by default under HTTP. See [Ambient board and workspace selection](#ambient-board-and-workspace-selection).
 
 ```typescript
 {
@@ -836,6 +864,9 @@ List all boards in a specific workspace.
 ### get\_active\_board\_info
 
 Get information about the currently active board.
+
+> **Note:** Registered only when ambient selection is on — the default under stdio, and off
+> by default under HTTP. See [Ambient board and workspace selection](#ambient-board-and-workspace-selection).
 
 ```typescript
 {

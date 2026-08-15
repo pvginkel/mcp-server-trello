@@ -6,6 +6,13 @@ export interface TrelloConfig {
   workspaceId?: string;
   /** Optional list of workspace IDs to restrict access to. If set, only these workspaces can be accessed. */
   allowedWorkspaceIds?: string[];
+  /**
+   * Whether a board/workspace selection may be held across calls. When false,
+   * every board-scoped call is resolved from its own argument or the env
+   * default, nothing is read from or written to `~/.trello-mcp/config.json`,
+   * and the selection tools refuse to run. Defaults to true.
+   */
+  ambientSelection?: boolean;
 }
 
 export interface TrelloBoard {

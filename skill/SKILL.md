@@ -19,7 +19,7 @@ Before using Trello tools, verify that the local server has been installed.
    `bash {skill-root}/scripts/install.sh`
 3. Confirm the MCP client has `TRELLO_API_KEY` and `TRELLO_TOKEN` configured.
    Optional values are `TRELLO_BOARD_ID`, `TRELLO_WORKSPACE_ID`,
-   `https_proxy`, and `HTTPS_PROXY`.
+   `TRELLO_MCP_AMBIENT_SELECTION`, `https_proxy`, and `HTTPS_PROXY`.
 
 The install script builds from `assets/source/` when Bun is available. If Bun is
 not available, it falls back to the published package install path and creates a
@@ -42,9 +42,9 @@ Load only the reference needed for the current Trello task.
 
 Choose tools by workflow, not by guessing IDs.
 
-- Board discovery: `list_boards`, `set_active_board`,
-  `get_active_board_info`, `list_workspaces`, `set_active_workspace`,
-  `list_boards_in_workspace`.
+- Board discovery: `list_boards`, `list_workspaces`,
+  `list_boards_in_workspace`, and, only when ambient selection is on,
+  `set_active_board`, `set_active_workspace`, `get_active_board_info`.
 - Lists and cards: `get_lists`, `get_cards_by_list_id`, `get_card`,
   `add_card_to_list`, `update_card_details`, `move_card`, `archive_card`,
   `copy_card`, `add_cards_to_list`, `get_my_cards`, `get_card_history`.
@@ -62,12 +62,30 @@ Choose tools by workflow, not by guessing IDs.
 - Health: `get_health`, `get_health_detailed`, `get_health_metadata`,
   `get_health_performance`, `perform_system_repair`.
 
+## Ambient Board Selection
+
+`set_active_board`, `set_active_workspace`, and `get_active_board_info` are
+registered only when ambient board and workspace selection is on. It is on for
+the stdio transport and off for the HTTP transport
+(`TRELLO_MCP_TRANSPORT=http`), unless `TRELLO_MCP_AMBIENT_SELECTION=on|off`
+overrides it.
+
+Check `tools/list` instead of assuming. When the three tools are absent there is
+no active board: pass `boardId` on the tools that accept it, or rely on
+`TRELLO_BOARD_ID`. Workspace targeting is then explicit only, so `create_board`
+under `TRELLO_ALLOWED_WORKSPACES` requires an explicit `idOrganization`.
+
 ## Agent Rules
 
 - Always discover the board, list, card, checklist, label, or member ID through
   tools before writing changes.
-- Prefer `set_active_board` after board discovery when several operations target
-  the same board.
+- When `set_active_board` is registered, prefer it after board discovery when
+  several operations target the same board. When it is absent, carry the board
+  ID as an explicit `boardId` argument instead, or rely on `TRELLO_BOARD_ID`.
+- Pass `boardId` only to the tools that declare it. Card, list, and attachment
+  tools such as `get_cards_by_list_id`, `add_card_to_list`,
+  `update_card_details`, `archive_card`, and the `attach_*` tools do not accept
+  it; Trello card, list, and attachment IDs are already globally unique.
 - Use start dates as `YYYY-MM-DD`. Use due dates as full ISO 8601 timestamps.
 - Treat Trello API writes as external side effects. Confirm destructive actions
   such as archive, delete, or repair unless the user already authorized them.

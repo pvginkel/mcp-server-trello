@@ -170,6 +170,30 @@ export class TrelloHealthMonitor {
   }
 
   /**
+   * Whether board-scoped checks have nothing to check.
+   *
+   * With ambient selection off and no `TRELLO_BOARD_ID`, every board-scoped
+   * call needs an explicit board, so there is no board this monitor could
+   * exercise. That is a valid deployment, not an unhealthy one — reporting it
+   * as DEGRADED would peg the whole report there permanently.
+   */
+  private get boardChecksNotApplicable(): boolean {
+    return !this.trelloClient.hasAmbientSelection && !this.trelloClient.effectiveBoardId;
+  }
+
+  /** A passing check standing in for one that had nothing to exercise. */
+  private notApplicable(checkName: string, startTime: number, what: string): HealthCheck {
+    return {
+      name: checkName,
+      status: HealthStatus.HEALTHY,
+      message: `${what} not checked: no board configured and ambient selection is disabled`,
+      duration_ms: Math.round(performance.now() - startTime),
+      timestamp: new Date().toISOString(),
+      metadata: { not_applicable: true },
+    };
+  }
+
+  /**
    * Check if we can access the active board
    */
   private async checkBoardAccess(): Promise<HealthCheck> {
@@ -177,7 +201,11 @@ export class TrelloHealthMonitor {
     const checkName = 'board_access';
 
     try {
-      const boardId = this.trelloClient.activeBoardId;
+      if (this.boardChecksNotApplicable) {
+        return this.notApplicable(checkName, startTime, 'Board access');
+      }
+
+      const boardId = this.trelloClient.effectiveBoardId;
       if (!boardId) {
         return {
           name: checkName,
@@ -313,6 +341,10 @@ export class TrelloHealthMonitor {
     const checkName = 'list_operations';
 
     try {
+      if (this.boardChecksNotApplicable) {
+        return this.notApplicable(checkName, startTime, 'List operations');
+      }
+
       const lists = await this.trelloClient.getLists();
       const duration = performance.now() - startTime;
       this.recordPerformanceMetric(duration, true);
@@ -377,6 +409,10 @@ export class TrelloHealthMonitor {
     const checkName = 'checklist_operations';
 
     try {
+      if (this.boardChecksNotApplicable) {
+        return this.notApplicable(checkName, startTime, 'Checklist operations');
+      }
+
       // Try to get acceptance criteria as a test
       const criteria = await this.trelloClient.getAcceptanceCriteria();
       const duration = performance.now() - startTime;
