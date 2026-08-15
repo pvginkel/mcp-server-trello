@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Request, Response } from 'express';
-import { readHttpConfig, createAuthMiddleware } from '../../src/http-server.js';
+import type { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { readHttpConfig, createAuthMiddleware, SessionRegistry } from '../../src/http-server.js';
 
 describe('readHttpConfig', () => {
   it('defaults to stdio with no env', () => {
@@ -57,6 +58,141 @@ describe('readHttpConfig', () => {
       TRELLO_MCP_HTTP_ALLOWED_HOSTS: 'trello.example.com, mcp.internal:3000 ,',
     });
     expect(config.allowedHosts).toEqual(['trello.example.com', 'mcp.internal:3000']);
+  });
+
+  it('defaults the session idle timeout to 30 minutes', () => {
+    expect(readHttpConfig({}).sessionIdleTimeoutMs).toBe(30 * 60 * 1000);
+  });
+
+  it('reads the session idle timeout in seconds, 0 disabling reaping', () => {
+    expect(
+      readHttpConfig({ TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT: '90' }).sessionIdleTimeoutMs
+    ).toBe(90_000);
+    expect(readHttpConfig({ TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT: '0' }).sessionIdleTimeoutMs).toBe(
+      0
+    );
+  });
+
+  it('rejects an invalid session idle timeout', () => {
+    expect(() => readHttpConfig({ TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT: 'never' })).toThrow(
+      /TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT/
+    );
+    expect(() => readHttpConfig({ TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT: '-5' })).toThrow(
+      /TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT/
+    );
+  });
+});
+
+/**
+ * A transport double that only records whether it was closed — enough to assert
+ * that the sweep releases a session rather than merely forgetting it.
+ */
+function fakeTransport() {
+  const state = { closed: 0 };
+  const transport = {
+    close: async () => {
+      state.closed++;
+    },
+  } as unknown as StreamableHTTPServerTransport;
+  return { transport, state };
+}
+
+describe('SessionRegistry', () => {
+  /** A registry on a clock the test advances by hand. */
+  function registry(idleTimeoutMs: number) {
+    let now = 1_000_000;
+    const reg = new SessionRegistry(idleTimeoutMs, () => now);
+    return { reg, advance: (ms: number) => (now += ms) };
+  }
+
+  it('reaps a session left idle past the timeout, closing its transport', () => {
+    const { reg, advance } = registry(60_000);
+    const { transport, state } = fakeTransport();
+    reg.set('a', transport);
+
+    advance(59_000);
+    expect(reg.sweep()).toBe(0);
+    expect(reg.size).toBe(1);
+
+    advance(2_000);
+    expect(reg.sweep()).toBe(1);
+    expect(reg.size).toBe(0);
+    expect(state.closed).toBe(1);
+    expect(reg.get('a')).toBeUndefined();
+  });
+
+  it('keeps a session alive while it is being used', () => {
+    const { reg, advance } = registry(60_000);
+    reg.set('a', fakeTransport().transport);
+
+    for (let i = 0; i < 5; i++) {
+      advance(50_000);
+      expect(reg.get('a')).toBeDefined(); // the lookup itself counts as activity
+      expect(reg.sweep()).toBe(0);
+    }
+    expect(reg.size).toBe(1);
+  });
+
+  it('never reaps a session holding an open response', () => {
+    const { reg, advance } = registry(60_000);
+    reg.set('a', fakeTransport().transport);
+    const release = reg.hold('a');
+
+    advance(10 * 60_000);
+    expect(reg.sweep()).toBe(0);
+    expect(reg.size).toBe(1);
+
+    // Releasing counts as activity, so the clock restarts from there.
+    release();
+    advance(59_000);
+    expect(reg.sweep()).toBe(0);
+    advance(2_000);
+    expect(reg.sweep()).toBe(1);
+  });
+
+  it('ignores a double release so the hold count cannot go negative', () => {
+    const { reg, advance } = registry(60_000);
+    reg.set('a', fakeTransport().transport);
+    const release = reg.hold('a');
+    const second = reg.hold('a');
+
+    release();
+    release();
+    advance(120_000);
+    expect(reg.sweep()).toBe(0); // `second` is still holding
+
+    second();
+    advance(120_000);
+    expect(reg.sweep()).toBe(1);
+  });
+
+  it('holding an unknown session is a no-op', () => {
+    const { reg } = registry(60_000);
+    expect(() => reg.hold('nope')()).not.toThrow();
+  });
+
+  it('reaps nothing when the timeout is disabled', () => {
+    const { reg, advance } = registry(0);
+    const { transport, state } = fakeTransport();
+    reg.set('a', transport);
+
+    advance(365 * 24 * 60 * 60 * 1000);
+    expect(reg.sweep()).toBe(0);
+    expect(reg.size).toBe(1);
+    expect(state.closed).toBe(0);
+  });
+
+  it('closeAll releases every session', () => {
+    const { reg } = registry(60_000);
+    const first = fakeTransport();
+    const second = fakeTransport();
+    reg.set('a', first.transport);
+    reg.set('b', second.transport);
+
+    reg.closeAll();
+    expect(reg.size).toBe(0);
+    expect(first.state.closed).toBe(1);
+    expect(second.state.closed).toBe(1);
   });
 });
 

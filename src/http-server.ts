@@ -19,10 +19,13 @@ export interface HttpConfig {
   token?: string;
   /** Host header values accepted for DNS-rebinding protection. */
   allowedHosts: string[];
+  /** Milliseconds a session may sit idle before it is closed; 0 disables reaping. */
+  sessionIdleTimeoutMs: number;
 }
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
+const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Read transport config from the environment. Pure and side-effect free so it
@@ -40,7 +43,9 @@ export function readHttpConfig(env: NodeJS.ProcessEnv = process.env): HttpConfig
         .filter(h => h.length > 0)
     : deriveAllowedHosts(host, port);
 
-  return { transport, host, port, token, allowedHosts };
+  const sessionIdleTimeoutMs = parseIdleTimeoutMs(env.TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT);
+
+  return { transport, host, port, token, allowedHosts, sessionIdleTimeoutMs };
 }
 
 function parsePort(raw: string | undefined): number {
@@ -50,6 +55,19 @@ function parsePort(raw: string | undefined): number {
     throw new Error(`Invalid TRELLO_MCP_HTTP_PORT: "${raw}" (expected 1-65535)`);
   }
   return port;
+}
+
+/** Parse the idle timeout, given in seconds; 0 turns session reaping off. */
+function parseIdleTimeoutMs(raw: string | undefined): number {
+  if (!raw || raw.trim().length === 0) return DEFAULT_SESSION_IDLE_TIMEOUT_MS;
+  const seconds = Number.parseFloat(raw.trim());
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new Error(
+      `Invalid TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT: "${raw}" ` +
+        `(expected a number of seconds >= 0, where 0 disables reaping)`
+    );
+  }
+  return Math.round(seconds * 1000);
 }
 
 /**
@@ -90,11 +108,121 @@ export function createAuthMiddleware(token: string | undefined) {
   };
 }
 
+/**
+ * The live sessions, and the idle sweep that bounds them.
+ *
+ * The SDK hands out one transport — and, here, one MCP server — per session, and
+ * releases it only when the client sends `DELETE /mcp`. The clients that actually
+ * reach a deployed server (claude.ai's connector, Claude Code) never send it; they
+ * just drop the socket. So a plain map is an unbounded leak: every session the
+ * process has ever served stays resident, measured at ~1.15 MB each. Sweeping on
+ * an idle deadline is what makes the table bounded.
+ *
+ * The clock is injectable so the sweep can be tested without waiting on real time.
+ */
+export class SessionRegistry {
+  private readonly sessions = new Map<
+    string,
+    { transport: StreamableHTTPServerTransport; lastSeen: number; holds: number }
+  >();
+
+  constructor(
+    private readonly idleTimeoutMs: number,
+    private readonly now: () => number = Date.now
+  ) {}
+
+  get size(): number {
+    return this.sessions.size;
+  }
+
+  /** Look up a session, counting the lookup as activity. */
+  get(id: string): StreamableHTTPServerTransport | undefined {
+    const session = this.sessions.get(id);
+    if (!session) return undefined;
+    session.lastSeen = this.now();
+    return session.transport;
+  }
+
+  set(id: string, transport: StreamableHTTPServerTransport): void {
+    this.sessions.set(id, { transport, lastSeen: this.now(), holds: 0 });
+  }
+
+  delete(id: string): void {
+    this.sessions.delete(id);
+  }
+
+  /**
+   * Mark a session busy while a response of its own is open, and return the
+   * release. A client parked on a long-lived SSE stream sends no requests for as
+   * long as it is listening, so without this the sweep would cut it off mid-stream
+   * precisely because it was working normally.
+   */
+  hold(id: string): () => void {
+    const session = this.sessions.get(id);
+    if (!session) return () => {};
+    session.holds++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      session.holds--;
+      session.lastSeen = this.now();
+    };
+  }
+
+  /**
+   * Close and forget every session idle past the timeout, returning how many went.
+   * A zero timeout disables reaping and keeps the pre-sweep behaviour.
+   */
+  sweep(): number {
+    if (this.idleTimeoutMs <= 0) return 0;
+    const cutoff = this.now() - this.idleTimeoutMs;
+    let closed = 0;
+    for (const [id, session] of this.sessions) {
+      if (session.holds > 0 || session.lastSeen > cutoff) continue;
+      this.sessions.delete(id);
+      closed++;
+      void this.closeQuietly(session.transport);
+    }
+    return closed;
+  }
+
+  /** Close every session, for shutdown. */
+  closeAll(): void {
+    for (const { transport } of this.sessions.values()) void this.closeQuietly(transport);
+    this.sessions.clear();
+  }
+
+  /**
+   * `close()` fires the transport's `onclose`, which the SDK chains into the
+   * per-session MCP server's teardown — so this releases both. A transport whose
+   * peer has already vanished can reject; that is the case we are cleaning up
+   * after, so it must not take the sweep down with it.
+   */
+  private async closeQuietly(transport: StreamableHTTPServerTransport): Promise<void> {
+    try {
+      await transport.close();
+    } catch (error) {
+      console.error('Error closing idle MCP session:', error);
+    }
+  }
+}
+
 /** Handle returned by {@link startHttpServer} for lifecycle management. */
 export interface HttpServerHandle {
   server: Server;
   url: string;
+  /** Number of sessions currently held open. */
+  sessionCount: () => number;
   close: () => Promise<void>;
+}
+
+/**
+ * How often the idle sweep runs. Capped so a short configured timeout is still
+ * enforced promptly, and floored so it never becomes a busy loop.
+ */
+function sweepIntervalFor(idleTimeoutMs: number): number {
+  return Math.max(100, Math.min(60_000, Math.floor(idleTimeoutMs / 2)));
 }
 
 /**
@@ -102,6 +230,10 @@ export interface HttpServerHandle {
  * one {@link StreamableHTTPServerTransport} (and one MCP server) per session,
  * keyed by the `Mcp-Session-Id` header, all sharing the single passed-in
  * {@link TrelloClient} so board/workspace selection persists across requests.
+ *
+ * Sessions are held in a {@link SessionRegistry}, which reaps them once idle —
+ * without that the table only ever grows, since clients close the socket rather
+ * than sending the `DELETE /mcp` that would release one.
  */
 export function startHttpServer(
   client: TrelloClient,
@@ -112,7 +244,7 @@ export function startHttpServer(
   app.use(express.json());
   app.use(createAuthMiddleware(config.token));
 
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const transports = new SessionRegistry(config.sessionIdleTimeoutMs);
 
   app.post('/mcp', async (req: Request, res: Response) => {
     try {
@@ -149,6 +281,10 @@ export function startHttpServer(
         await createMcpServer(client, health).connect(transport);
       }
 
+      // An established session stays busy for as long as this response is open;
+      // a POST may be answered with an SSE stream that runs well past the request.
+      if (sessionId) res.on('close', transports.hold(sessionId));
+
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
       console.error('Error handling MCP POST request:', error);
@@ -162,14 +298,29 @@ export function startHttpServer(
   const handleSessionRequest = async (req: Request, res: Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     const transport = sessionId ? transports.get(sessionId) : undefined;
-    if (!transport) {
+    if (!transport || !sessionId) {
       res.status(404).json(jsonRpcError(-32001, 'Session not found'));
       return;
     }
+    // The GET is the server->client stream; it is open, and the session active,
+    // for as long as the client listens on it.
+    res.on('close', transports.hold(sessionId));
     await transport.handleRequest(req, res);
   };
   app.get('/mcp', handleSessionRequest);
   app.delete('/mcp', handleSessionRequest);
+
+  // `unref` so an idle sweep never holds the process open on its own.
+  const sweepTimer =
+    config.sessionIdleTimeoutMs > 0
+      ? setInterval(() => {
+          const closed = transports.sweep();
+          if (closed > 0) {
+            console.error(`Reaped ${closed} idle MCP session(s); ${transports.size} still open`);
+          }
+        }, sweepIntervalFor(config.sessionIdleTimeoutMs))
+      : undefined;
+  sweepTimer?.unref();
 
   return new Promise<HttpServerHandle>((resolve, reject) => {
     const server = app.listen(config.port, config.host, () => {
@@ -177,17 +328,19 @@ export function startHttpServer(
       // stderr only: stdout is reserved for the stdio JSON-RPC stream.
       console.error(
         `Trello MCP server listening on ${url} (Streamable HTTP)` +
-          (config.token ? ' [bearer auth enabled]' : '')
+          (config.token ? ' [bearer auth enabled]' : '') +
+          (config.sessionIdleTimeoutMs > 0
+            ? ` [sessions reaped after ${config.sessionIdleTimeoutMs / 1000}s idle]`
+            : ' [session reaping disabled]')
       );
       resolve({
         server,
         url,
+        sessionCount: () => transports.size,
         close: () =>
           new Promise<void>((resolveClose, rejectClose) => {
-            for (const transport of transports.values()) {
-              void transport.close();
-            }
-            transports.clear();
+            if (sweepTimer) clearInterval(sweepTimer);
+            transports.closeAll();
             server.close(err => (err ? rejectClose(err) : resolveClose()));
           }),
       });
