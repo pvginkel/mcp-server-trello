@@ -435,7 +435,6 @@ export class TrelloClient {
   }
 
   async addCard(
-    boardId: string | undefined,
     params: {
       listId: string;
       name: string;
@@ -461,7 +460,6 @@ export class TrelloClient {
   }
 
   async updateCard(
-    boardId: string | undefined,
     params: {
       cardId: string;
       name?: string;
@@ -489,7 +487,7 @@ export class TrelloClient {
     });
   }
 
-  async archiveCard(boardId: string | undefined, cardId: string): Promise<TrelloCard> {
+  async archiveCard(cardId: string): Promise<TrelloCard> {
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.put(`/cards/${cardId}`, {
         closed: true,
@@ -498,7 +496,7 @@ export class TrelloClient {
     });
   }
 
-  async unarchiveCard(boardId: string | undefined, cardId: string): Promise<TrelloCard> {
+  async unarchiveCard(cardId: string): Promise<TrelloCard> {
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.put(`/cards/${cardId}`, {
         closed: false,
@@ -536,7 +534,7 @@ export class TrelloClient {
     });
   }
 
-  async archiveList(boardId: string | undefined, listId: string): Promise<TrelloList> {
+  async archiveList(listId: string): Promise<TrelloList> {
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.put(`/lists/${listId}/closed`, {
         value: true,
@@ -580,7 +578,6 @@ export class TrelloClient {
   }
 
   async attachImageToCard(
-    boardId: string | undefined,
     cardId: string,
     imageUrl: string,
     name?: string
@@ -594,7 +591,6 @@ export class TrelloClient {
   }
 
   async attachDataToCard(
-    boardId: string | undefined,
     cardId: string,
     data: string,
     name?: string,
@@ -606,7 +602,6 @@ export class TrelloClient {
   }
 
   async attachImageDataToCard(
-    boardId: string | undefined,
     cardId: string,
     imageData: string,
     name?: string,
@@ -618,7 +613,6 @@ export class TrelloClient {
   }
 
   async attachFileToCard(
-    boardId: string | undefined,
     cardId: string,
     fileUrl: string,
     name?: string,
@@ -1421,7 +1415,7 @@ export class TrelloClient {
     const errors: Array<{ index: number; name: string; error: string }> = [];
     for (let i = 0; i < cards.length; i++) {
       try {
-        const result = await this.addCard(undefined, {
+        const result = await this.addCard({
           listId,
           name: cards[i].name,
           description: cards[i].description,

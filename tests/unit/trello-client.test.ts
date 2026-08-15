@@ -150,7 +150,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.post.mockResolvedValue({ data: card });
 
       const client = createClient();
-      const result = await client.addCard(undefined, {
+      const result = await client.addCard({
         listId: 'l1',
         name: 'New Card',
         description: 'A description',
@@ -176,7 +176,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.post.mockResolvedValue({ data: { id: 'c1' } });
 
       const client = createClient();
-      await client.addCard(undefined, { listId: 'l1', name: 'Card' });
+      await client.addCard({ listId: 'l1', name: 'Card' });
 
       expect(mockAxiosInstance.post).toHaveBeenCalledWith('/cards', {
         idList: 'l1',
@@ -195,7 +195,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1', name: 'Updated' } });
 
       const client = createClient();
-      await client.updateCard(undefined, {
+      await client.updateCard({
         cardId: 'c1',
         name: 'Updated',
         dueReminder: null,
@@ -217,7 +217,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1' } });
 
       const client = createClient();
-      await client.updateCard(undefined, {
+      await client.updateCard({
         cardId: 'c1',
         dueReminder: 60,
       });
@@ -239,7 +239,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1', closed: true } });
 
       const client = createClient();
-      await client.archiveCard(undefined, 'c1');
+      await client.archiveCard('c1');
 
       expect(mockAxiosInstance.put).toHaveBeenCalledWith('/cards/c1', { closed: true });
     });
@@ -250,7 +250,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1', closed: false } });
 
       const client = createClient();
-      await client.unarchiveCard(undefined, 'c1');
+      await client.unarchiveCard('c1');
 
       expect(mockAxiosInstance.put).toHaveBeenCalledWith('/cards/c1', { closed: false });
     });
@@ -259,7 +259,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'c1', closed: false, idList: 'l1' } });
 
       const client = createClient();
-      const card = await client.unarchiveCard('b1', 'c1');
+      const card = await client.unarchiveCard('c1');
 
       expect(card).toEqual({ id: 'c1', closed: false, idList: 'l1' });
     });
@@ -314,7 +314,7 @@ describe('TrelloClient', () => {
       mockAxiosInstance.put.mockResolvedValue({ data: { id: 'l1' } });
 
       const client = createClient();
-      await client.archiveList(undefined, 'l1');
+      await client.archiveList('l1');
 
       expect(mockAxiosInstance.put).toHaveBeenCalledWith('/lists/l1/closed', { value: true });
     });
@@ -888,7 +888,6 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       const result = await client.attachDataToCard(
-        undefined,
         'c1',
         Buffer.from('hello').toString('base64'),
         'notes.md',
@@ -911,7 +910,7 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       const dataUrl = `data:application/pdf;base64,${Buffer.from('pdf-bytes').toString('base64')}`;
-      await client.attachDataToCard(undefined, 'c1', dataUrl, 'report.pdf');
+      await client.attachDataToCard('c1', dataUrl, 'report.pdf');
 
       const form = mockAxiosInstance.post.mock.calls[0][1];
       expect(form.getBuffer().toString()).toContain('application/pdf');
@@ -923,7 +922,6 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       await client.attachDataToCard(
-        undefined,
         'c1',
         Buffer.from('# hi').toString('base64'),
         'notes.md'
@@ -938,7 +936,6 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       await client.attachDataToCard(
-        undefined,
         'c1',
         Buffer.from('blob').toString('base64')
       );
@@ -952,7 +949,7 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       const dataUrl = `data:application/octet-stream;base64,${Buffer.from('x').toString('base64')}`;
-      await client.attachDataToCard(undefined, 'c1', dataUrl, 'a.pdf', 'application/pdf');
+      await client.attachDataToCard('c1', dataUrl, 'a.pdf', 'application/pdf');
 
       const form = mockAxiosInstance.post.mock.calls[0][1];
       expect(form.getBuffer().toString()).toContain('application/pdf');
@@ -962,7 +959,7 @@ describe('TrelloClient', () => {
     it('should reject a malformed data URL without uploading', async () => {
       const client = createClient();
       await expect(
-        client.attachDataToCard(undefined, 'c1', 'data:not-valid', 'x.bin')
+        client.attachDataToCard('c1', 'data:not-valid', 'x.bin')
       ).rejects.toThrow();
       expect(mockAxiosInstance.post).not.toHaveBeenCalled();
     });
@@ -976,7 +973,6 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       await client.attachImageDataToCard(
-        undefined,
         'c1',
         Buffer.from('png-bytes').toString('base64')
       );
@@ -991,7 +987,6 @@ describe('TrelloClient', () => {
       const client = createClient();
 
       await client.attachImageDataToCard(
-        undefined,
         'c1',
         Buffer.from('jpg-bytes').toString('base64'),
         'photo.jpg',
