@@ -124,6 +124,7 @@ environment variables:
 | `TRELLO_MCP_HTTP_PORT` | `3000` | Bind port. |
 | `TRELLO_MCP_HTTP_TOKEN` | *(unset)* | If set, every request must send `Authorization: Bearer <token>`. |
 | `TRELLO_MCP_HTTP_ALLOWED_HOSTS` | derived from `host:port` | Comma-separated `Host` header allow-list for DNS-rebinding protection. |
+| `TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT` | `1800` | Seconds a session may sit idle before it is closed and forgotten (see [Session lifetime](#session-lifetime)). `0` disables reaping. |
 
 Start it over HTTP:
 
@@ -166,6 +167,26 @@ If a bearer token is configured, include it in the client's request headers:
 > `host:port` clients will use. DNS-rebinding protection is always on and rejects
 > requests whose `Host` header is not in the allow-list. Legacy SSE transport is
 > not supported.
+
+#### Session lifetime
+
+Each Streamable HTTP session gets its own transport and its own MCP server, held
+open until the client releases it. The protocol's way of releasing one is
+`DELETE /mcp` — but the clients that reach a deployed server in practice
+(claude.ai's connector, Claude Code) simply close the socket instead, so nothing
+would ever be released. A long-running instance would then accumulate every
+session it had ever served, at roughly 1.15 MB apiece.
+
+So sessions are swept once they have been idle for
+`TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT` seconds (30 minutes by default). A session
+counts as active while it is receiving requests *and* for as long as it holds an
+open response, so a client parked on a long-lived SSE stream is never cut off. A
+client whose session has been reaped gets `404` and re-initializes, which is the
+behaviour the spec already requires it to handle.
+
+When this server sits behind a proxy that keeps its own upstream session (such as
+an MCP filtering proxy), give this timeout more room than the proxy's, so the
+inner session always outlives the outer one.
 
 ### Board and Workspace Management
 

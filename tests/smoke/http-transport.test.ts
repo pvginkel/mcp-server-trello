@@ -141,6 +141,53 @@ describe('Streamable HTTP transport (no auth)', () => {
   });
 });
 
+describe('Streamable HTTP session reaping', () => {
+  let handle: HttpServerHandle;
+  let url: string;
+
+  beforeAll(async () => {
+    const port = await getFreePort();
+    const booted = await bootServer({
+      TRELLO_MCP_TRANSPORT: 'http',
+      TRELLO_MCP_HTTP_HOST: '127.0.0.1',
+      TRELLO_MCP_HTTP_PORT: String(port),
+      // Sub-second so the sweep is observable in a test; production defaults to
+      // 30 minutes.
+      TRELLO_MCP_HTTP_SESSION_IDLE_TIMEOUT: '0.3',
+    });
+    handle = booted;
+    url = booted.url;
+  });
+
+  afterAll(async () => {
+    await handle?.close();
+  });
+
+  it('drops an idle session and answers 404 on its next request', async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: MCP_HEADERS,
+      body: JSON.stringify(INIT_BODY),
+    });
+    expect(res.status).toBe(200);
+    await res.text(); // drain, so the response closes and stops holding the session
+    const sessionId = res.headers.get('mcp-session-id');
+    expect(sessionId).toBeTruthy();
+    expect(handle.sessionCount()).toBe(1);
+
+    // Idle past the timeout; the sweep runs at half of it.
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    expect(handle.sessionCount()).toBe(0);
+    const after = await fetch(url, {
+      method: 'POST',
+      headers: { ...MCP_HEADERS, 'mcp-session-id': sessionId as string },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+    });
+    expect(after.status).toBe(404);
+  });
+});
+
 describe('Streamable HTTP transport (bearer auth)', () => {
   let handle: HttpServerHandle;
   let url: string;
