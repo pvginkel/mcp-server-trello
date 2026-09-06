@@ -1,0 +1,33 @@
+# The environment shape for mcp-server-trello — a Bun/TypeScript MCP server for
+# Trello.  Reference: https://kubecoder.home/help/reference/config-yaml/
+#
+# This repository is a fork of delorenj/mcp-server-trello that is kept
+# rebaseable on upstream, so the KubeCoder footprint is deliberately just this
+# file and project.yaml.  Everything not named below is the documented default:
+#
+#   repos:         nothing here builds, runs or reads a sibling checkout.
+#   services:      the server talks to api.trello.com over the network and
+#                  persists nothing locally — no database, broker or object
+#                  store to stand up.
+#   ports:         the default transport is stdio.  The opt-in Streamable HTTP
+#                  transport binds 127.0.0.1:3000, and the transport suite binds
+#                  an ephemeral loopback port, so nothing needs publishing on
+#                  the environment's address to be exercised from in here.
+#   imageBuilder:  Jenkins (job `TrelloMcp`) builds the Dockerfile with
+#                  helmCharts.kaniko; nothing builds an image locally.
+#   secrets:       the server needs TRELLO_API_KEY and TRELLO_TOKEN and the
+#                  deployment's secret catalog carries neither.  The suite does
+#                  not need them: tests/smoke/smoke.test.ts self-skips its 26
+#                  live-API tests when they are unset, and every other suite
+#                  uses dummy credentials.
+
+tools:
+  # bun, vitest and eslint all run here.  The dev container has node and npm but
+  # no bun, and package.json's scripts and CI are bun's throughout.
+  - use: frontend
+
+capabilities:
+  github: rw
+
+setup:
+  - kc project setup

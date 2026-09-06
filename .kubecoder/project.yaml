@@ -1,0 +1,33 @@
+# The curated automation for mcp-server-trello.
+# Reference: https://kubecoder.home/help/reference/project-yaml/
+#
+# One component.  The repository is a single Bun package whose one
+# vitest.config.ts covers every suite under tests/, so there is nothing to split
+# on — a second component would only run the same suite a second time.
+
+projects:
+  root:
+    description: MCP server for the Trello API — TypeScript on Bun, bundled with `bun build`, tested with vitest.
+    jenkins: TrelloMcp
+
+    setup: cexec frontend bun install --frozen-lockfile
+
+    build: cexec frontend bun run build
+
+    # `bun run test` is `vitest run`.  Deliberately not `test:coverage`, which
+    # CI uses: its thresholds in vitest.config.ts carry `autoUpdate: true`, so
+    # running it here would rewrite a tracked file on every green run.  The
+    # coverage ratchet stays where it belongs, in .github/workflows/ci.yml.
+    test: cexec frontend bun run test
+
+    # package.json has never carried a lint script, so this is the repository's
+    # first whole-tree lint run and it is RED — 253 errors and 25 warnings over
+    # 26 files, 233 of them prettier/prettier formatting.  All of it predates
+    # onboarding, which touched no file eslint reads.  Reformatting the tree
+    # would fight the upstream rebase this fork is kept ready for, so the gate
+    # reports rather than hides it.
+    #
+    # Not a typecheck: `tsc --noEmit` exhausts the heap on this repository even
+    # at HEAD, which is why package.json's build:type script swallows its own
+    # failure.  The real build is `bun build`, above.
+    lint: cexec frontend bunx eslint . --ext .ts,.js,.mjs
