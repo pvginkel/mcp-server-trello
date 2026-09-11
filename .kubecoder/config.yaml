@@ -28,6 +28,3 @@ tools:
 
 capabilities:
   github: rw
-
-setup:
-  - kc project setup
