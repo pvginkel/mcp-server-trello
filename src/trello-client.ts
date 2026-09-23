@@ -893,34 +893,41 @@ export class TrelloClient {
       markdown += `📍 **Board**: [${card.board.name}](${card.board.url}) > **List**: ${card.list.name}\n\n`;
     }
 
-    // Labels
+    // Labels — header always rendered so an empty section reads as "no labels"
+    // rather than "not fetched".
+    markdown += `## 🏷️ Labels\n\n`;
     if (card.labels && card.labels.length > 0) {
-      markdown += `## 🏷️ Labels\n`;
       card.labels.forEach(label => {
         markdown += `- \`${label.color}\` ${label.name || '(no name)'}\n`;
       });
-      markdown += '\n';
+    } else {
+      markdown += `_None_\n`;
     }
+    markdown += '\n';
 
-    // Due date
+    // Due date — rendered inline on the header line.
     if (card.due) {
       const dueDate = new Date(card.due);
       const status = card.dueComplete ? '✅ Complete' : '⏰ Due';
-      markdown += `## 📅 Due Date\n${status}: ${dueDate.toLocaleString()}\n\n`;
+      markdown += `## 📅 Due Date: ${status} ${dueDate.toLocaleString()}\n\n`;
+    } else {
+      markdown += `## 📅 Due Date: _Unset_\n\n`;
     }
 
     // Members
+    markdown += `## 👥 Members\n\n`;
     if (card.members && card.members.length > 0) {
-      markdown += `## 👥 Members\n`;
       card.members.forEach(member => {
         markdown += `- @${member.username} (${member.fullName})\n`;
       });
-      markdown += '\n';
+    } else {
+      markdown += `_None_\n`;
     }
+    markdown += '\n';
 
     // Description
+    markdown += `## 📝 Description\n\n`;
     if (card.desc) {
-      markdown += `## 📝 Description\n`;
       markdown += `${card.desc}\n\n`;
 
       // Parse for inline images (Trello uses markdown-like syntax)
@@ -937,11 +944,13 @@ export class TrelloClient {
         });
         markdown += '\n';
       }
+    } else {
+      markdown += `_Empty_\n\n`;
     }
 
     // Checklists
+    markdown += `## ✅ Checklists\n\n`;
     if (card.checklists && card.checklists.length > 0) {
-      markdown += `## ✅ Checklists\n`;
       card.checklists.forEach(checklist => {
         const completed = checklist.checkItems.filter(item => item.state === 'complete').length;
         const total = checklist.checkItems.length;
@@ -967,11 +976,13 @@ export class TrelloClient {
         });
         markdown += '\n';
       });
+    } else {
+      markdown += `_None_\n\n`;
     }
 
     // Attachments
     if (card.attachments && card.attachments.length > 0) {
-      markdown += `## 📎 Attachments (${card.attachments.length})\n`;
+      markdown += `## 📎 Attachments (${card.attachments.length})\n\n`;
       card.attachments.forEach((attachment, index) => {
         markdown += `### ${index + 1}. ${attachment.name}\n`;
         markdown += `- **URL**: ${attachment.url}\n`;
@@ -995,35 +1006,42 @@ export class TrelloClient {
         }
         markdown += '\n';
       });
+    } else {
+      markdown += `## 📎 Attachments\n\n_None_\n\n`;
     }
 
-    // Comments
-    if (card.comments && card.comments.length > 0) {
-      markdown += `## 💬 Comments (${card.comments.length})\n`;
-      card.comments.forEach(comment => {
+    // Comments — Trello returns comment actions under `actions`; surface them here.
+    const comments = card.comments ?? card.actions ?? [];
+    if (comments.length > 0) {
+      markdown += `## 💬 Comments (${comments.length})\n\n`;
+      comments.forEach(comment => {
         const date = new Date(comment.date);
         markdown += `### ${comment.memberCreator.fullName} (@${comment.memberCreator.username}) - ${date.toLocaleString()}\n`;
         markdown += `${comment.data.text}\n\n`;
       });
+    } else {
+      markdown += `## 💬 Comments\n\n_None_\n\n`;
     }
 
     // Statistics
+    markdown += `## 📊 Statistics\n\n`;
+    const stats: string[] = [];
     if (card.badges) {
-      markdown += `## 📊 Statistics\n`;
       if (card.badges.checkItems > 0) {
-        markdown += `- **Checklist Items**: ${card.badges.checkItemsChecked}/${card.badges.checkItems} completed\n`;
+        stats.push(`- **Checklist Items**: ${card.badges.checkItemsChecked}/${card.badges.checkItems} completed`);
       }
       if (card.badges.comments > 0) {
-        markdown += `- **Comments**: ${card.badges.comments}\n`;
+        stats.push(`- **Comments**: ${card.badges.comments}`);
       }
       if (card.badges.attachments > 0) {
-        markdown += `- **Attachments**: ${card.badges.attachments}\n`;
+        stats.push(`- **Attachments**: ${card.badges.attachments}`);
       }
       if (card.badges.votes > 0) {
-        markdown += `- **Votes**: ${card.badges.votes}\n`;
+        stats.push(`- **Votes**: ${card.badges.votes}`);
       }
-      markdown += '\n';
     }
+    markdown += stats.length > 0 ? `${stats.join('\n')}\n` : `_None_\n`;
+    markdown += '\n';
 
     // Links
     markdown += `## 🔗 Links\n`;

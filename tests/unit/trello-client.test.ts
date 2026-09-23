@@ -691,6 +691,51 @@ describe('TrelloClient', () => {
     });
   });
 
+  describe('getCard markdown rendering', () => {
+    it('renders every section header with an empty marker on a bare card', async () => {
+      const card = { id: 'c1', name: 'Bare Card', url: 'u', shortUrl: 's', dateLastActivity: '2020-01-01' };
+      mockAxiosInstance.get.mockResolvedValue({ data: card });
+
+      const md = (await createClient().getCard('c1', true)) as string;
+
+      // Headers are lifted out of their conditionals so the model can see the
+      // sections are already rendered and skip redundant checklist/comment calls.
+      expect(md).toContain('## 🏷️ Labels\n\n_None_');
+      expect(md).toContain('## 📅 Due Date: _Unset_');
+      expect(md).toContain('## 👥 Members\n\n_None_');
+      expect(md).toContain('## 📝 Description\n\n_Empty_');
+      expect(md).toContain('## ✅ Checklists\n\n_None_');
+      expect(md).toContain('## 📎 Attachments\n\n_None_');
+      expect(md).toContain('## 💬 Comments\n\n_None_');
+      expect(md).toContain('## 📊 Statistics\n\n_None_');
+    });
+
+    it('renders comments from the Trello `actions` field in standard output', async () => {
+      const card = {
+        id: 'c1',
+        name: 'Card',
+        url: 'u',
+        shortUrl: 's',
+        dateLastActivity: '2020-01-01',
+        actions: [
+          {
+            id: 'a1',
+            date: '2020-01-02T00:00:00Z',
+            data: { text: 'First comment' },
+            memberCreator: { id: 'm1', fullName: 'Jane Doe', username: 'jane' },
+          },
+        ],
+      };
+      mockAxiosInstance.get.mockResolvedValue({ data: card });
+
+      const md = (await createClient().getCard('c1', true)) as string;
+
+      expect(md).toContain('## 💬 Comments (1)');
+      expect(md).toContain('Jane Doe (@jane)');
+      expect(md).toContain('First comment');
+    });
+  });
+
   describe('getCardHistory', () => {
     it('should fetch card actions with optional params', async () => {
       mockAxiosInstance.get.mockResolvedValue({ data: [] });
