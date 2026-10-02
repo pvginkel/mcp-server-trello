@@ -14,7 +14,7 @@
 #                  an ephemeral loopback port, so nothing needs publishing on
 #                  the environment's address to be exercised from in here.
 #   imageBuilder:  Jenkins (job `TrelloMcp`) builds the Dockerfile with
-#                  helmCharts.kaniko; nothing builds an image locally.
+#                  helmCharts.kaniko2; nothing builds an image locally.
 #   secrets:       the server needs TRELLO_API_KEY and TRELLO_TOKEN and the
 #                  deployment's secret catalog carries neither.  The suite does
 #                  not need them: tests/smoke/smoke.test.ts self-skips its 26
