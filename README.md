@@ -64,6 +64,8 @@ The skill is the agent-facing entry point for this repository.
 - `skill/references/trello-mcp/`: Focused references for setup, tools,
   workflows, and gotchas.
 - `skill/assets/source/`: Bundled MCP server source used for local builds.
+  Generated from `src/` by `scripts/build-skill-assets.sh` (`mise run package`);
+  do not hand-edit — re-run the script after changing `src/`.
 
 For AI agents, start with `skill/SKILL.md` rather than this README. The README
 is the human-facing overview; the skill references are the operational surface
